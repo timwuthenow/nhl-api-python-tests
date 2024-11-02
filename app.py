@@ -406,7 +406,7 @@ if __name__ == '__main__':
         logger.info(f"Scheduler started - updating every {Config.UPDATE_INTERVAL_MINUTES} minutes")
         
         # Run app
-        port = int(os.environ.get('PORT', 5002))
+        port = int(os.environ.get('PORT', 5000))
         logger.info(f"Starting Flask app on port {port}")
         app.run(host='0.0.0.0', port=port)
         

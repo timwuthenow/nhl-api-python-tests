@@ -7,6 +7,7 @@ import os
 import sys
 import csv
 import requests
+import gc
 from config import Config
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -438,6 +439,7 @@ def process_team_rankings(
             if team_ranking:
                 team_ranking["powerplay_percentage"] = pp_percentage
                 team_ranking["penalty_kill_percentage"] = pk_percentage
+                gc.collect()
                 return team_ranking
 
         return None
@@ -446,10 +448,20 @@ def process_team_rankings(
         return None
 
 
+def log_memory_usage():
+    import psutil
+
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+    logger.info(f"Memory usage: {mem_info.rss / 1024 / 1024:.2f} MB")
+
+
 def update_rankings_parallel():
     """Parallel version of update_rankings"""
     try:
         logger.info("Starting parallel rankings update...")
+        batch_size = 4
+
         stats_fetcher = NHLStatsFetcher()
         calculator = RankingsCalculator()
         processor = GameProcessor()
@@ -470,7 +482,7 @@ def update_rankings_parallel():
         rankings_data = []
 
         # Use ThreadPoolExecutor to process teams in parallel
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        with ThreadPoolExecutor(max_workers=4) as executor:
             # Submit all teams for processing
             future_to_team = {
                 executor.submit(process_func, team): team for team in TEAM_CODES
@@ -510,6 +522,7 @@ def update_rankings_parallel():
 def create_app():
     """Application factory function"""
     logger.info("Starting NHL Rankings application...")
+    log_memory_usage()
 
     flask_app = Flask(__name__)
     flask_app.config.from_object(Config)
@@ -541,7 +554,9 @@ def create_app():
         )
 
     # Initialize scheduler with parallel update function
-    scheduler = BackgroundScheduler()
+    scheduler = BackgroundScheduler(
+        executors={"default": {"type": "threadpool", "max_workers": 4}}
+    )
     scheduler.add_job(
         func=update_rankings_parallel,  # Use parallel version
         trigger="interval",

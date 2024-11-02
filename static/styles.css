@@ -1,0 +1,35 @@
+body {
+    font-family: Arial, sans-serif;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+th {
+    background-color: #f2f2f2;
+}
+
+img.team-logo {
+    width: 30px;
+    height: 30px;
+}
+
+input[type="range"] {
+    width: 100%;
+}
+
+#date-picker {
+    margin-right: 10px;
+}

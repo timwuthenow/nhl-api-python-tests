@@ -1,0 +1,19 @@
+<!-- templates/error.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NHL Power Rankings - Error</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <meta http-equiv="refresh" content="30"> <!-- Refresh every 30 seconds when error -->
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-4">NHL Power Rankings</h1>
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+            <strong class="font-bold">Error:</strong>
+            <span class="block sm:inline">{{ error }}</span>
+        </div>
+        <p class="mt-4 text-gray-600">Page will refresh automatically...</p>
+    </div>
+</body>
+</html>

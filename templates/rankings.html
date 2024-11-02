@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="refresh-container">
+        <button id="refreshButton" class="refresh-button">
+            <span class="refresh-icon">↻</span> Refresh Rankings
+        </button>
+        <span id="lastUpdate" class="last-update">Last updated: {{ last_update }}</span>
+        <span id="refreshStatus" class="refresh-status"></span>
+    </div>
+    
+    <style>
+    .refresh-container {
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+    
+    .refresh-button {
+        background-color: #1a73e8;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 16px;
+        transition: background-color 0.2s;
+    }
+    
+    .refresh-button:hover {
+        background-color: #1557b0;
+    }
+    
+    .refresh-button:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
+    }
+    
+    .refresh-icon {
+        display: inline-block;
+        transition: transform 0.5s;
+    }
+    
+    .refresh-icon.spinning {
+        animation: spin 1s linear infinite;
+    }
+    
+    .refresh-status {
+        color: #666;
+        font-size: 14px;
+    }
+    
+    .last-update {
+        color: #666;
+        font-size: 14px;
+    }
+    
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    </style>
+
+    <h1 class="text-3xl font-bold mb-4">NHL Power Rankings</h1>
+    
+    <div class="overflow-x-auto">
+        <table class="min-w-full bg-white shadow-md rounded">
+            <thead>
+                <tr class="bg-gray-200 text-gray-700">
+                    <th class="px-4 py-2">Rank</th>
+                    <th class="px-4 py-2">Team</th>
+                    <th class="px-4 py-2">Score</th>
+                    <th class="px-4 py-2">Points</th>
+                    <th class="px-4 py-2">GP</th>
+                    <th class="px-4 py-2">GF</th>
+                    <th class="px-4 py-2">GA</th>
+                    <th class="px-4 py-2">DIFF</th>
+                    <th class="px-4 py-2">PP%</th>
+                    <th class="px-4 py-2">PK%</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for team in rankings %}
+                <tr class="hover:bg-gray-50 {% if loop.index <= 3 %}bg-green-50{% endif %}{% if loop.index > rankings|length - 3 %}bg-red-50{% endif %}">
+                    <td class="px-4 py-2 text-center">{{ loop.index }}</td>
+                    <td class="px-4 py-2">
+                        <div class="flex items-center">
+                            <img src="{{ team.logo }}" alt="{{ team.team }}" class="h-8 w-8 mr-2">
+                            {{ team.team }}
+                        </div>
+                    </td>
+                    <td class="px-4 py-2 font-semibold">{{ "%.2f"|format(team.score) }}</td>
+                    <td class="px-4 py-2">{{ team.points }}</td>
+                    <td class="px-4 py-2">{{ team.games_played }}</td>
+                    <td class="px-4 py-2">{{ team.goals_for }}</td>
+                    <td class="px-4 py-2">{{ team.goals_against }}</td>
+                    <td class="px-4 py-2">{{ team.goal_differential }}</td>
+                    <td class="px-4 py-2">{{ "%.1f"|format(team.powerplay_percentage) }}%</td>
+                    <td class="px-4 py-2">{{ "%.1f"|format(team.penalty_kill_percentage) }}%</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const refreshButton = document.getElementById('refreshButton');
+        const refreshIcon = refreshButton.querySelector('.refresh-icon');
+        const refreshStatus = document.getElementById('refreshStatus');
+        const lastUpdate = document.getElementById('lastUpdate');
+        const rankingsTable = document.querySelector('table');
+
+        refreshButton.addEventListener('click', async function() {
+            try {
+                refreshButton.disabled = true;
+                refreshIcon.classList.add('spinning');
+                refreshStatus.textContent = 'Updating rankings...';
+
+                const response = await fetch('/refresh_rankings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    const tbody = rankingsTable.querySelector('tbody');
+                    tbody.innerHTML = '';
+
+                    data.rankings.forEach((team, index) => {
+                        const row = document.createElement('tr');
+                        
+                        // Add hover effect and background colors for top/bottom teams
+                        row.className = `hover:bg-gray-50 ${
+                            index < 3 ? 'bg-green-50' : 
+                            index >= data.rankings.length - 3 ? 'bg-red-50' : ''
+                        }`;
+                        
+                        row.innerHTML = `
+                            <td class="px-4 py-2 text-center">${index + 1}</td>
+                            <td class="px-4 py-2">
+                                <div class="flex items-center">
+                                    <img src="${team.logo}" alt="${team.team}" class="h-8 w-8 mr-2">
+                                    ${team.team}
+                                </div>
+                            </td>
+                            <td class="px-4 py-2 font-semibold">${team.score.toFixed(2)}</td>
+                            <td class="px-4 py-2">${team.points}</td>
+                            <td class="px-4 py-2">${team.games_played}</td>
+                            <td class="px-4 py-2">${team.goals_for}</td>
+                            <td class="px-4 py-2">${team.goals_against}</td>
+                            <td class="px-4 py-2">${team.goal_differential}</td>
+                            <td class="px-4 py-2">${team.powerplay_percentage.toFixed(1)}%</td>
+                            <td class="px-4 py-2">${team.penalty_kill_percentage.toFixed(1)}%</td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+
+                    lastUpdate.textContent = `Last updated: ${data.last_update}`;
+                    refreshStatus.textContent = 'Rankings updated successfully!';
+                    
+                    setTimeout(() => {
+                        refreshStatus.textContent = '';
+                    }, 3000);
+                } else {
+                    throw new Error(data.error || 'Failed to update rankings');
+                }
+            } catch (error) {
+                refreshStatus.textContent = `Error: ${error.message}`;
+            } finally {
+                refreshButton.disabled = false;
+                refreshIcon.classList.remove('spinning');
+                
+                setTimeout(() => {
+                    if (refreshStatus.textContent.startsWith('Error:')) {
+                        refreshStatus.textContent = '';
+                    }
+                }, 5000);
+            }
+        });
+    });
+    </script>
+</div>
+{% endblock %}

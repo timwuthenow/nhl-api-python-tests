@@ -9,10 +9,28 @@ import csv
 import requests
 from config import Config
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+from functools import partial
+
 # Import existing modules
 from nhl_rankings_calculator import RankingsCalculator
 from nhl_game_processor import GameProcessor
 from nhl_stats_fetcher import NHLStatsFetcher
+
+
+def initialize_rankings(flask_app):
+    """Initialize rankings in a separate thread"""
+    try:
+        logger.info("Starting initial rankings generation in background thread...")
+        clean_rankings_files()
+        initial_rankings = update_rankings()
+        if initial_rankings is not None:
+            logger.info("Initial rankings generated successfully")
+        else:
+            logger.warning("Initial rankings generation failed")
+    except Exception as e:
+        logger.error(f"Error in rankings initialization thread: {str(e)}")
 
 
 def test_nhl_api_connection():
@@ -348,6 +366,147 @@ def update_rankings():
         return None
 
 
+def process_team_rankings(
+    team, start_date, end_date, stats_fetcher, calculator, processor
+):
+    """Process rankings for a single team"""
+    try:
+        logger.debug(f"Processing team {team} in thread")
+        team_stats = stats_fetcher.get_team_stats(team, end_date)
+        schedule = stats_fetcher.get_schedule(team, start_date, end_date)
+
+        if not schedule:
+            logger.warning(f"No schedule found for {team}")
+            return None
+
+        game_stats = []
+        for game in schedule:
+            details = stats_fetcher.get_game_details(game["id"])
+            if details:
+                stats = processor.process_game(details, team)
+                if stats:
+                    game_stats.append(stats)
+
+        if game_stats:
+            # Calculate power play percentage
+            total_pp_goals = sum(g["powerplay_goals"] for g in game_stats)
+            total_pp_opportunities = sum(
+                g["powerplay_opportunities"] for g in game_stats
+            )
+            pp_percentage = (
+                (total_pp_goals / total_pp_opportunities * 100)
+                if total_pp_opportunities > 0
+                else 0
+            )
+
+            # Calculate penalty kill percentage
+            total_pk_successes = sum(g["penalty_kill_successes"] for g in game_stats)
+            total_times_shorthanded = sum(g["times_shorthanded"] for g in game_stats)
+            pk_percentage = (
+                (total_pk_successes / total_times_shorthanded * 100)
+                if total_times_shorthanded > 0
+                else 0
+            )
+
+            # Aggregate stats
+            aggregated_stats = {
+                "total_points": sum(g["total_points"] for g in game_stats),
+                "games_played": len(game_stats),
+                "wins": sum(g["wins"] for g in game_stats),
+                "losses": sum(g["losses"] for g in game_stats),
+                "otl": sum(g["otl"] for g in game_stats),
+                "goals_for": sum(g["goals_for"] for g in game_stats),
+                "goals_against": sum(g["goals_against"] for g in game_stats),
+                "shots_on_goal": sum(g["shots_on_goal"] for g in game_stats),
+                "shots_against": sum(g["shots_against"] for g in game_stats),
+                "powerplay_goals": total_pp_goals,
+                "powerplay_opportunities": total_pp_opportunities,
+                "penalty_kill_successes": total_pk_successes,
+                "times_shorthanded": total_times_shorthanded,
+                "powerplay_percentage": pp_percentage,
+                "penalty_kill_percentage": pk_percentage,
+                "road_wins": sum(g["road_wins"] for g in game_stats),
+                "scoring_first": sum(g["scoring_first"] for g in game_stats),
+                "comeback_wins": sum(g["comeback_wins"] for g in game_stats),
+                "one_goal_games": sum(g["one_goal_games"] for g in game_stats),
+                "last_10_results": [g.get("last_10", 0) for g in game_stats][-10:],
+            }
+
+            team_ranking = calculator.calculate_team_score(
+                aggregated_stats, team_stats, team
+            )
+            if team_ranking:
+                team_ranking["powerplay_percentage"] = pp_percentage
+                team_ranking["penalty_kill_percentage"] = pk_percentage
+                return team_ranking
+
+        return None
+    except Exception as e:
+        logger.error(f"Error processing {team}: {str(e)}")
+        return None
+
+
+def update_rankings_parallel():
+    """Parallel version of update_rankings"""
+    try:
+        logger.info("Starting parallel rankings update...")
+        stats_fetcher = NHLStatsFetcher()
+        calculator = RankingsCalculator()
+        processor = GameProcessor()
+
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=14)
+
+        # Create a partial function with the common arguments
+        process_func = partial(
+            process_team_rankings,
+            start_date=start_date,
+            end_date=end_date,
+            stats_fetcher=stats_fetcher,
+            calculator=calculator,
+            processor=processor,
+        )
+
+        rankings_data = []
+
+        # Use ThreadPoolExecutor to process teams in parallel
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            # Submit all teams for processing
+            future_to_team = {
+                executor.submit(process_func, team): team for team in TEAM_CODES
+            }
+
+            # Collect results as they complete
+            for future in as_completed(future_to_team):
+                team = future_to_team[future]
+                try:
+                    team_ranking = future.result()
+                    if team_ranking:
+                        rankings_data.append(team_ranking)
+                        logger.info(f"Successfully processed rankings for {team}")
+                except Exception as e:
+                    logger.error(f"Error processing {team}: {str(e)}")
+
+        if rankings_data:
+            df = pd.DataFrame(rankings_data)
+            now = datetime.now()
+            filename = f'nhl_power_rankings_{now.strftime("%Y%m%d")}.csv'
+
+            if save_rankings(df, filename):
+                logger.info(
+                    f"Successfully created rankings for {len(rankings_data)} teams"
+                )
+                return df
+
+        logger.error("No rankings data generated")
+        return None
+
+    except Exception as e:
+        logger.error(f"Error in parallel rankings update: {str(e)}")
+        logger.error("Exception details:", exc_info=True)
+        return None
+
+
 def create_app():
     """Application factory function"""
     logger.info("Starting NHL Rankings application...")
@@ -364,10 +523,27 @@ def create_app():
             "NHL API connection test failed - application may have limited functionality"
         )
 
-    # Initialize scheduler
+
+def create_app():
+    """Application factory function"""
+    logger.info("Starting NHL Rankings application...")
+
+    flask_app = Flask(__name__)
+    flask_app.config.from_object(Config)
+    logger.info("Flask app created and configured")
+
+    # Test NHL API connectivity on startup
+    if test_nhl_api_connection():
+        logger.info("NHL API connection test successful")
+    else:
+        logger.warning(
+            "NHL API connection test failed - application may have limited functionality"
+        )
+
+    # Initialize scheduler with parallel update function
     scheduler = BackgroundScheduler()
     scheduler.add_job(
-        func=update_rankings,
+        func=update_rankings_parallel,  # Use parallel version
         trigger="interval",
         minutes=Config.UPDATE_INTERVAL_MINUTES,
         max_instances=1,
@@ -379,6 +555,10 @@ def create_app():
     logger.info(
         f"Scheduler started - updating every {Config.UPDATE_INTERVAL_MINUTES} minutes"
     )
+
+    # Start initial rankings update in background thread
+    init_thread = threading.Thread(target=initialize_rankings, args=(flask_app,))
+    init_thread.start()
 
     # Perform initial rankings update
     logger.info("Performing initial rankings update...")
@@ -465,7 +645,7 @@ def create_app():
     def refresh_rankings():
         logger.info("Manual rankings refresh requested")
         try:
-            df = update_rankings()
+            df = update_rankings_parallel()
 
             if df is None:
                 logger.error("Failed to update rankings - no data returned")

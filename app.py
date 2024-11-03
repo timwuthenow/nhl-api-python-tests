@@ -512,7 +512,7 @@ def log_memory_usage():
 
 
 def update_rankings_parallel():
-    """Parallel version of update_rankings with memory optimization"""
+    """Railway-optimized parallel rankings update with incremental CSV writing"""
     try:
         logger.info("Starting parallel rankings update...")
         stats_fetcher = NHLStatsFetcher()
@@ -522,26 +522,49 @@ def update_rankings_parallel():
         end_date = datetime.now()
         start_date = end_date - timedelta(days=14)
 
-        # Process teams in smaller batches to control memory usage
-        BATCH_SIZE = 4
-        rankings_data = []
+        # Initialize CSV file early
+        now = datetime.now()
+        filename = f'nhl_power_rankings_{now.strftime("%Y%m%d")}.csv'
+        temp_filename = f"temp_{filename}"
+
+        # Write headers
+        headers = [
+            "team",
+            "points",
+            "games_played",
+            "goals_for",
+            "goals_against",
+            "goal_differential",
+            "points_percentage",
+            "powerplay_percentage",
+            "penalty_kill_percentage",
+            "score",
+        ]
+
+        with open(temp_filename, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=headers)
+            writer.writeheader()
+
+        # Process teams in very small batches to control memory usage
+        BATCH_SIZE = 2  # Reduced batch size for Railway
+        processed_count = 0
 
         for i in range(0, len(TEAM_CODES), BATCH_SIZE):
             batch = TEAM_CODES[i : i + BATCH_SIZE]
             logger.info(f"Processing batch of teams: {batch}")
-
-            # Create a partial function with the common arguments
-            process_func = partial(
-                process_team_rankings,
-                start_date=start_date,
-                end_date=end_date,
-                stats_fetcher=stats_fetcher,
-                calculator=calculator,
-                processor=processor,
-            )
+            batch_rankings = []
 
             # Process batch with limited threads
-            with ThreadPoolExecutor(max_workers=min(BATCH_SIZE, 4)) as executor:
+            with ThreadPoolExecutor(max_workers=2) as executor:  # Reduced thread count
+                process_func = partial(
+                    process_team_rankings,
+                    start_date=start_date,
+                    end_date=end_date,
+                    stats_fetcher=stats_fetcher,
+                    calculator=calculator,
+                    processor=processor,
+                )
+
                 future_to_team = {
                     executor.submit(process_func, team): team for team in batch
                 }
@@ -551,36 +574,79 @@ def update_rankings_parallel():
                     try:
                         team_ranking = future.result()
                         if team_ranking:
-                            rankings_data.append(team_ranking)
+                            # Round values before writing
+                            team_ranking["powerplay_percentage"] = round(
+                                team_ranking.get("powerplay_percentage", 0), 1
+                            )
+                            team_ranking["penalty_kill_percentage"] = round(
+                                team_ranking.get("penalty_kill_percentage", 0), 1
+                            )
+                            team_ranking["points_percentage"] = round(
+                                team_ranking.get("points_percentage", 0), 3
+                            )
+                            team_ranking["score"] = round(
+                                team_ranking.get("score", 0), 2
+                            )
+
+                            batch_rankings.append(team_ranking)
+                            processed_count += 1
                             logger.info(f"Successfully processed rankings for {team}")
                     except Exception as e:
                         logger.error(f"Error processing {team}: {str(e)}")
 
-            # Clear caches after each batch
+            # Write batch to CSV
+            if batch_rankings:
+                with open(temp_filename, "a", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=headers)
+                    for ranking in batch_rankings:
+                        writer.writerow(ranking)
+
+                logger.info(
+                    f"Wrote batch of {len(batch_rankings)} teams to temporary CSV"
+                )
+
+            # Clear memory after each batch
+            batch_rankings = []
             processor.clear_cache()
             gc.collect()
 
+            # Log memory usage
+            process = psutil.Process(os.getpid())
             logger.info(
-                f"Completed batch processing. Memory usage: {get_memory_usage()}"
+                f"Memory usage after batch: {process.memory_info().rss / 1024 / 1024:.1f} MB"
             )
 
-        if rankings_data:
-            df = pd.DataFrame(rankings_data)
-            now = datetime.now()
-            filename = f'nhl_power_rankings_{now.strftime("%Y%m%d")}.csv'
+        # If we processed any teams, finalize the CSV
+        if processed_count > 0:
+            try:
+                # Read the temp CSV and sort by score
+                df = pd.read_csv(temp_filename)
+                df = df.sort_values("score", ascending=False)
+                df.to_csv(filename, index=False)
 
-            if save_rankings(df, filename):
+                # Clean up temp file
+                os.remove(temp_filename)
+
                 logger.info(
-                    f"Successfully created rankings for {len(rankings_data)} teams"
+                    f"Successfully created final rankings for {processed_count} teams"
                 )
                 return df
-
-        logger.error("No rankings data generated")
-        return None
+            except Exception as e:
+                logger.error(f"Error finalizing CSV: {str(e)}")
+                if os.path.exists(temp_filename):
+                    os.remove(temp_filename)
+                return None
+        else:
+            logger.error("No rankings data generated")
+            if os.path.exists(temp_filename):
+                os.remove(temp_filename)
+            return None
 
     except Exception as e:
         logger.error(f"Error in parallel rankings update: {str(e)}")
         logger.error("Exception details:", exc_info=True)
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
         return None
 
 

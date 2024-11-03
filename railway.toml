@@ -3,11 +3,11 @@ builder = "nixpacks"
 buildCommand = "pip install -r requirements.txt"
 
 [deploy]
-startCommand = "gunicorn app:app --timeout 300 --workers 1 --threads 2 --worker-class gthread"
+startCommand = "gunicorn app:app --timeout 600 --workers 1 --threads 2 --worker-class gthread"
 healthcheckPath = "/health"
-healthcheckTimeout = 300
-restartPolicyType = "on-failure"
-restartPolicyMaxRetries = 5
+healthcheckTimeout = 600
+restartPolicy = "always"
+
 
 [deploy.env]
 FLASK_ENV="production"

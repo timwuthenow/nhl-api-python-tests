@@ -36,40 +36,79 @@ def initialize_rankings(flask_app):
 
 
 def test_nhl_api_connection():
-    """Test NHL API connectivity with improved error handling"""
+    """Test NHL API connectivity with improved DNS resolution and fallback"""
     logger.info("Testing NHL API connectivity...")
     try:
         api_host = os.getenv("NHL_API_HOST", "statsapi.web.nhl.com")
-        timeout = int(os.getenv("NHL_API_TIMEOUT", 10))
+        timeout = int(os.getenv("NHL_API_TIMEOUT", 20))
 
-        # Try to resolve the hostname
-        import socket
+        # Try multiple DNS resolvers
+        ip_address = None
+        dns_servers = [
+            "8.8.8.8",  # Google DNS
+            "1.1.1.1",  # Cloudflare DNS
+            "9.9.9.9",  # Quad9 DNS
+        ]
 
-        try:
-            ip = socket.gethostbyname(api_host)
-            logger.info(f"Successfully resolved {api_host} to {ip}")
-        except socket.gaierror as e:
-            # Try with backup DNS
+        for dns_server in dns_servers:
             try:
                 import dns.resolver
 
-                answers = dns.resolver.resolve(api_host, "A")
-                ip = answers[0].address
-                logger.info(f"Resolved {api_host} using backup DNS to {ip}")
-            except Exception:
-                logger.error(f"DNS resolution failed for {api_host}")
+                resolver = dns.resolver.Resolver()
+                resolver.nameservers = [dns_server]
+                answers = resolver.resolve(api_host, "A")
+                ip_address = answers[0].address
+                logger.info(
+                    f"Successfully resolved {api_host} to {ip_address} using DNS server {dns_server}"
+                )
+                break
+            except Exception as e:
+                logger.warning(f"DNS resolution failed with {dns_server}: {str(e)}")
+                continue
+
+        if not ip_address:
+            # Try system DNS as last resort
+            try:
+                import socket
+
+                ip_address = socket.gethostbyname(api_host)
+                logger.info(f"Resolved {api_host} using system DNS to {ip_address}")
+            except socket.gaierror as e:
+                logger.error(f"All DNS resolution attempts failed for {api_host}")
                 return False
 
-        # Test the connection
+        # Test the connection with retry logic
         session = requests.Session()
-        session.mount("http://", requests.adapters.HTTPAdapter(max_retries=3))
-        session.mount("https://", requests.adapters.HTTPAdapter(max_retries=3))
-
-        response = session.get(
-            f"https://{api_host}/api/v1/teams", timeout=timeout, verify=True
+        retries = requests.adapters.Retry(
+            total=3, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504]
         )
-        logger.info(f"NHL API test response code: {response.status_code}")
-        return response.status_code == 200
+        session.mount("http://", requests.adapters.HTTPAdapter(max_retries=retries))
+        session.mount("https://", requests.adapters.HTTPAdapter(max_retries=retries))
+
+        # Try direct IP connection first
+        try:
+            headers = {"Host": api_host}
+            response = session.get(
+                f"https://{ip_address}/api/v1/teams",
+                headers=headers,
+                timeout=timeout,
+                verify=True,
+            )
+            logger.info(f"Direct IP connection successful: {response.status_code}")
+            return response.status_code == 200
+        except Exception as e:
+            logger.warning(f"Direct IP connection failed: {str(e)}")
+
+            # Fallback to hostname
+            try:
+                response = session.get(
+                    f"https://{api_host}/api/v1/teams", timeout=timeout, verify=True
+                )
+                logger.info(f"Hostname connection successful: {response.status_code}")
+                return response.status_code == 200
+            except Exception as e:
+                logger.error(f"All connection attempts failed: {str(e)}")
+                return False
 
     except Exception as e:
         logger.error(f"NHL API connection test failed: {str(e)}")

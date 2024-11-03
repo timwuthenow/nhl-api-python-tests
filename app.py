@@ -7,6 +7,7 @@ import os
 import sys
 import csv
 import requests
+import psutil
 import gc
 from config import Config
 
@@ -35,24 +36,41 @@ def initialize_rankings(flask_app):
 
 
 def test_nhl_api_connection():
-    """Test NHL API connectivity and log detailed information"""
+    """Test NHL API connectivity with improved error handling"""
     logger.info("Testing NHL API connectivity...")
     try:
-        # Try to resolve the hostname first
+        api_host = os.getenv("NHL_API_HOST", "statsapi.web.nhl.com")
+        timeout = int(os.getenv("NHL_API_TIMEOUT", 10))
+
+        # Try to resolve the hostname
         import socket
 
         try:
-            ip = socket.gethostbyname("statsapi.web.nhl.com")
-            logger.info(f"Successfully resolved statsapi.web.nhl.com to {ip}")
+            ip = socket.gethostbyname(api_host)
+            logger.info(f"Successfully resolved {api_host} to {ip}")
         except socket.gaierror as e:
-            logger.error(f"DNS resolution failed: {str(e)}")
-            return False
+            # Try with backup DNS
+            try:
+                import dns.resolver
+
+                answers = dns.resolver.resolve(api_host, "A")
+                ip = answers[0].address
+                logger.info(f"Resolved {api_host} using backup DNS to {ip}")
+            except Exception:
+                logger.error(f"DNS resolution failed for {api_host}")
+                return False
 
         # Test the connection
         session = requests.Session()
-        response = session.get("https://statsapi.web.nhl.com/api/v1/teams", timeout=5)
+        session.mount("http://", requests.adapters.HTTPAdapter(max_retries=3))
+        session.mount("https://", requests.adapters.HTTPAdapter(max_retries=3))
+
+        response = session.get(
+            f"https://{api_host}/api/v1/teams", timeout=timeout, verify=True
+        )
         logger.info(f"NHL API test response code: {response.status_code}")
         return response.status_code == 200
+
     except Exception as e:
         logger.error(f"NHL API connection test failed: {str(e)}")
         return False
@@ -449,19 +467,15 @@ def process_team_rankings(
 
 
 def log_memory_usage():
-    import psutil
-
     process = psutil.Process(os.getpid())
     mem_info = process.memory_info()
     logger.info(f"Memory usage: {mem_info.rss / 1024 / 1024:.2f} MB")
 
 
 def update_rankings_parallel():
-    """Parallel version of update_rankings"""
+    """Parallel version of update_rankings with memory optimization"""
     try:
         logger.info("Starting parallel rankings update...")
-        batch_size = 4
-
         stats_fetcher = NHLStatsFetcher()
         calculator = RankingsCalculator()
         processor = GameProcessor()
@@ -469,35 +483,47 @@ def update_rankings_parallel():
         end_date = datetime.now()
         start_date = end_date - timedelta(days=14)
 
-        # Create a partial function with the common arguments
-        process_func = partial(
-            process_team_rankings,
-            start_date=start_date,
-            end_date=end_date,
-            stats_fetcher=stats_fetcher,
-            calculator=calculator,
-            processor=processor,
-        )
-
+        # Process teams in smaller batches to control memory usage
+        BATCH_SIZE = 4
         rankings_data = []
 
-        # Use ThreadPoolExecutor to process teams in parallel
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            # Submit all teams for processing
-            future_to_team = {
-                executor.submit(process_func, team): team for team in TEAM_CODES
-            }
+        for i in range(0, len(TEAM_CODES), BATCH_SIZE):
+            batch = TEAM_CODES[i : i + BATCH_SIZE]
+            logger.info(f"Processing batch of teams: {batch}")
 
-            # Collect results as they complete
-            for future in as_completed(future_to_team):
-                team = future_to_team[future]
-                try:
-                    team_ranking = future.result()
-                    if team_ranking:
-                        rankings_data.append(team_ranking)
-                        logger.info(f"Successfully processed rankings for {team}")
-                except Exception as e:
-                    logger.error(f"Error processing {team}: {str(e)}")
+            # Create a partial function with the common arguments
+            process_func = partial(
+                process_team_rankings,
+                start_date=start_date,
+                end_date=end_date,
+                stats_fetcher=stats_fetcher,
+                calculator=calculator,
+                processor=processor,
+            )
+
+            # Process batch with limited threads
+            with ThreadPoolExecutor(max_workers=min(BATCH_SIZE, 4)) as executor:
+                future_to_team = {
+                    executor.submit(process_func, team): team for team in batch
+                }
+
+                for future in as_completed(future_to_team):
+                    team = future_to_team[future]
+                    try:
+                        team_ranking = future.result()
+                        if team_ranking:
+                            rankings_data.append(team_ranking)
+                            logger.info(f"Successfully processed rankings for {team}")
+                    except Exception as e:
+                        logger.error(f"Error processing {team}: {str(e)}")
+
+            # Clear caches after each batch
+            processor.clear_cache()
+            gc.collect()
+
+            logger.info(
+                f"Completed batch processing. Memory usage: {get_memory_usage()}"
+            )
 
         if rankings_data:
             df = pd.DataFrame(rankings_data)
@@ -519,22 +545,13 @@ def update_rankings_parallel():
         return None
 
 
-def create_app():
-    """Application factory function"""
-    logger.info("Starting NHL Rankings application...")
-    log_memory_usage()
+def get_memory_usage():
+    """Get current memory usage"""
+    import psutil
 
-    flask_app = Flask(__name__)
-    flask_app.config.from_object(Config)
-    logger.info("Flask app created and configured")
-
-    # Test NHL API connectivity on startup
-    if test_nhl_api_connection():
-        logger.info("NHL API connection test successful")
-    else:
-        logger.warning(
-            "NHL API connection test failed - application may have limited functionality"
-        )
+    process = psutil.Process(os.getpid())
+    mem = process.memory_info().rss / 1024 / 1024  # Convert to MB
+    return f"{mem:.1f}MB"
 
 
 def create_app():
@@ -558,7 +575,7 @@ def create_app():
         executors={"default": {"type": "threadpool", "max_workers": 4}}
     )
     scheduler.add_job(
-        func=update_rankings_parallel,  # Use parallel version
+        func=update_rankings_parallel,
         trigger="interval",
         minutes=Config.UPDATE_INTERVAL_MINUTES,
         max_instances=1,
@@ -570,11 +587,6 @@ def create_app():
     logger.info(
         f"Scheduler started - updating every {Config.UPDATE_INTERVAL_MINUTES} minutes"
     )
-
-    # Start initial rankings update in background thread
-    init_thread = threading.Thread(target=initialize_rankings, args=(flask_app,))
-    init_thread.start()
-
     # Perform initial rankings update
     logger.info("Performing initial rankings update...")
     clean_rankings_files()

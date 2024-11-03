@@ -652,7 +652,6 @@ def update_rankings_parallel():
 
 def get_memory_usage():
     """Get current memory usage"""
-    import psutil
 
     process = psutil.Process(os.getpid())
     mem = process.memory_info().rss / 1024 / 1024  # Convert to MB
@@ -661,254 +660,197 @@ def get_memory_usage():
 
 def create_app():
     """Application factory function"""
-    logger.info("Starting NHL Rankings application...")
+    try:
+        logger.info("Starting NHL Rankings application...")
 
-    flask_app = Flask(__name__)
-    flask_app.config.from_object(Config)
-    logger.info("Flask app created and configured")
+        flask_app = Flask(__name__)
+        flask_app.config.from_object(Config)
+        logger.info("Flask app created and configured")
 
-    # Test NHL API connectivity on startup
-    if test_nhl_api_connection():
-        logger.info("NHL API connection test successful")
-    else:
-        logger.warning(
-            "NHL API connection test failed - application may have limited functionality"
+        # Test NHL API connectivity on startup
+        if test_nhl_api_connection():
+            logger.info("NHL API connection test successful")
+        else:
+            logger.warning(
+                "NHL API connection test failed - application may have limited functionality"
+            )
+
+        # Initialize scheduler with parallel update function
+        scheduler = BackgroundScheduler(
+            executors={"default": {"type": "threadpool", "max_workers": 4}}
+        )
+        scheduler.add_job(
+            func=update_rankings_parallel,
+            trigger="interval",
+            minutes=Config.UPDATE_INTERVAL_MINUTES,
+            max_instances=1,
+            id="rankings_update",
+        )
+        scheduler.start()
+        flask_app.config["scheduler_running"] = True
+        flask_app.scheduler = scheduler
+        logger.info(
+            f"Scheduler started - updating every {Config.UPDATE_INTERVAL_MINUTES} minutes"
         )
 
-    # Initialize scheduler with parallel update function
-    scheduler = BackgroundScheduler(
-        executors={"default": {"type": "threadpool", "max_workers": 4}}
-    )
-    scheduler.add_job(
-        func=update_rankings_parallel,
-        trigger="interval",
-        minutes=Config.UPDATE_INTERVAL_MINUTES,
-        max_instances=1,
-        id="rankings_update",
-    )
-    scheduler.start()
-    flask_app.config["scheduler_running"] = True
-    flask_app.scheduler = scheduler
-    logger.info(
-        f"Scheduler started - updating every {Config.UPDATE_INTERVAL_MINUTES} minutes"
-    )
-    # Perform initial rankings update
-    logger.info("Performing initial rankings update...")
-    clean_rankings_files()
-    initial_rankings = update_rankings()
-    if initial_rankings is not None:
-        logger.info("Initial rankings generated successfully")
-    else:
-        logger.warning("Initial rankings generation failed")
-
-    # Register routes
-    @flask_app.route("/")
-    def home():
-        logger.info("Processing home page request")
-        try:
-            # Clean up any corrupted files first
-            clean_rankings_files()
-
-            # Get latest rankings file
-            files = [f for f in os.listdir(".") if f.startswith("nhl_power_rankings_")]
-            if not files:
-                logger.warning("No rankings files found - initiating generation")
-                return render_template(
-                    "error.html",
-                    error="Generating initial rankings... Please refresh in a few moments.",
-                )
-
-            latest_file = max(files)
-            logger.info(f"Found latest rankings file: {latest_file}")
-
+        # Register routes
+        @flask_app.route("/")
+        def home():
+            logger.info("Processing home page request")
             try:
-                df = pd.read_csv(latest_file)
-                logger.info(f"Successfully read rankings file with {len(df)} teams")
+                # Clean up any corrupted files first
+                clean_rankings_files()
 
-                if "team" not in df.columns:
-                    logger.error(f"Invalid file format in {latest_file}")
+                # Get latest rankings file
+                files = [
+                    f for f in os.listdir(".") if f.startswith("nhl_power_rankings_")
+                ]
+                if not files:
+                    logger.warning("No rankings files found - initiating generation")
+                    return render_template(
+                        "error.html",
+                        error="Generating initial rankings... Please refresh in a few moments.",
+                    )
+
+                latest_file = max(files)
+                logger.info(f"Found latest rankings file: {latest_file}")
+
+                try:
+                    df = pd.read_csv(latest_file)
+                    logger.info(f"Successfully read rankings file with {len(df)} teams")
+
+                    if "team" not in df.columns:
+                        logger.error(f"Invalid file format in {latest_file}")
+                        os.remove(latest_file)
+                        return render_template(
+                            "error.html",
+                            error="Rankings data corrupted. Regenerating...",
+                        )
+
+                except Exception as e:
+                    logger.error(f"Error reading {latest_file}: {str(e)}")
                     os.remove(latest_file)
                     return render_template(
                         "error.html", error="Rankings data corrupted. Regenerating..."
                     )
 
+                if df.empty:
+                    logger.warning("Rankings DataFrame is empty")
+                    return render_template(
+                        "error.html",
+                        error="No rankings data available yet. Please try again later.",
+                    )
+
+                # Process the DataFrame
+                df.columns = df.columns.str.lower()
+                df = df.sort_values("score", ascending=False).reset_index(drop=True)
+                df["logo"] = df["team"].map(TEAM_LOGOS)
+
+                # Round values
+                df["powerplay_percentage"] = df["powerplay_percentage"].round(1)
+                df["penalty_kill_percentage"] = df["penalty_kill_percentage"].round(1)
+                df["points_percentage"] = df["points_percentage"].round(3)
+                df["score"] = df["score"].round(2)
+
+                last_update = datetime.fromtimestamp(os.path.getmtime(latest_file))
+                logger.info(
+                    f"Successfully prepared rankings data for display, last updated: {last_update}"
+                )
+
+                return render_template(
+                    "rankings.html",
+                    rankings=df.to_dict("records"),
+                    last_update=last_update.strftime("%Y-%m-%d %H:%M:%S"),
+                )
             except Exception as e:
-                logger.error(f"Error reading {latest_file}: {str(e)}")
-                os.remove(latest_file)
+                logger.error(f"Error rendering homepage: {str(e)}", exc_info=True)
                 return render_template(
-                    "error.html", error="Rankings data corrupted. Regenerating..."
+                    "error.html", error=f"Error loading rankings: {str(e)}"
                 )
 
-            if df.empty:
-                logger.warning("Rankings DataFrame is empty")
-                return render_template(
-                    "error.html",
-                    error="No rankings data available yet. Please try again later.",
-                )
+        pass
 
-            # Process the DataFrame
-            df.columns = df.columns.str.lower()
-            df = df.sort_values("score", ascending=False).reset_index(drop=True)
-            df["logo"] = df["team"].map(TEAM_LOGOS)
-
-            # Round values
-            df["powerplay_percentage"] = df["powerplay_percentage"].round(1)
-            df["penalty_kill_percentage"] = df["penalty_kill_percentage"].round(1)
-            df["points_percentage"] = df["points_percentage"].round(3)
-            df["score"] = df["score"].round(2)
-
-            last_update = datetime.fromtimestamp(os.path.getmtime(latest_file))
-            logger.info(
-                f"Successfully prepared rankings data for display, last updated: {last_update}"
-            )
-
-            return render_template(
-                "rankings.html",
-                rankings=df.to_dict("records"),
-                last_update=last_update.strftime("%Y-%m-%d %H:%M:%S"),
-            )
-        except Exception as e:
-            logger.error(f"Error rendering homepage: {str(e)}", exc_info=True)
-            return render_template(
-                "error.html", error=f"Error loading rankings: {str(e)}"
-            )
-
-    @flask_app.route("/refresh_rankings", methods=["POST"])
-    def refresh_rankings():
-        logger.info("Manual rankings refresh requested")
-        try:
-            df = update_rankings_parallel()
-
-            if df is None:
-                logger.error("Failed to update rankings - no data returned")
-                return {"success": False, "error": "Failed to update rankings"}, 500
-
-            logger.info(f"Successfully updated rankings for {len(df)} teams")
-
-            # Round the values
-            df["powerplay_percentage"] = df["powerplay_percentage"].round(1)
-            df["penalty_kill_percentage"] = df["penalty_kill_percentage"].round(1)
-            df["points_percentage"] = df["points_percentage"].round(3)
-            df["score"] = df["score"].round(2)
-
-            df = df.sort_values("score", ascending=False).reset_index(drop=True)
-            df["logo"] = df["team"].map(TEAM_LOGOS)
-
-            rankings_data = df.to_dict("records")
-            last_update = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            logger.info("Rankings refresh completed successfully")
-            return {
-                "success": True,
-                "rankings": rankings_data,
-                "last_update": last_update,
-            }
-
-        except Exception as e:
-            logger.error(f"Error refreshing rankings: {str(e)}", exc_info=True)
-            return {"success": False, "error": str(e)}, 500
-
-    @flask_app.route("/health")
-    def health_check():
-        """Health check endpoint with enhanced error handling and timeouts"""
-        try:
-            status_checks = {
-                "nhl_api": False,
-                "rankings_file": False,
-                "scheduler": False,
-                "file_system": False,
-            }
-
-            # Check NHL API with timeout and retries
+        @flask_app.route("/refresh_rankings", methods=["POST"])
+        def refresh_rankings():
+            logger.info("Manual rankings refresh requested")
             try:
-                session = requests.Session()
-                retries = requests.adapters.Retry(
-                    total=3, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504]
-                )
-                adapter = requests.adapters.HTTPAdapter(max_retries=retries)
-                session.mount("http://", adapter)
-                session.mount("https://", adapter)
+                df = update_rankings_parallel()
 
-                response = session.get(
-                    "https://statsapi.web.nhl.com/api/v1/teams", timeout=5, verify=True
-                )
-                status_checks["nhl_api"] = response.status_code == 200
-                logger.info(f"NHL API check: {response.status_code}")
-            except requests.exceptions.RequestException as e:
-                logger.warning(f"NHL API check failed: {str(e)}")
-                status_checks["nhl_api"] = False
+                if df is None:
+                    logger.error("Failed to update rankings - no data returned")
+                    return {"success": False, "error": "Failed to update rankings"}, 500
 
-            # Check file system and rankings files
+                logger.info(f"Successfully updated rankings for {len(df)} teams")
+
+                # Round the values
+                df["powerplay_percentage"] = df["powerplay_percentage"].round(1)
+                df["penalty_kill_percentage"] = df["penalty_kill_percentage"].round(1)
+                df["points_percentage"] = df["points_percentage"].round(3)
+                df["score"] = df["score"].round(2)
+
+                df = df.sort_values("score", ascending=False).reset_index(drop=True)
+                df["logo"] = df["team"].map(TEAM_LOGOS)
+
+                rankings_data = df.to_dict("records")
+                last_update = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                logger.info("Rankings refresh completed successfully")
+                return {
+                    "success": True,
+                    "rankings": rankings_data,
+                    "last_update": last_update,
+                }
+
+            except Exception as e:
+                logger.error(f"Error refreshing rankings: {str(e)}", exc_info=True)
+                return {"success": False, "error": str(e)}, 500
+
+        @flask_app.route("/health")
+        def health_check():
+            """Simplified health check that won't timeout"""
             try:
-                # Test if we can write to filesystem
+                status_checks = {
+                    "status": "available",
+                    "timestamp": datetime.now().isoformat(),
+                    "process_id": os.getpid(),
+                    "memory_usage": f"{psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024:.1f}MB",
+                }
+
+                # Check if we can write to filesystem
                 test_file = "health_check_test.txt"
                 with open(test_file, "w") as f:
                     f.write("test")
-                os.remove(test_file)
-                status_checks["file_system"] = True
+                    os.remove(test_file)
+                    status_checks["filesystem"] = "writable"
 
-                # Check rankings files
+                # Check for rankings files
                 rankings_files = [
                     f for f in os.listdir(".") if f.startswith("nhl_power_rankings_")
                 ]
-                status_checks["rankings_file"] = len(rankings_files) > 0
-                if rankings_files:
-                    logger.info(f"Found {len(rankings_files)} rankings files")
-                else:
-                    logger.warning("No rankings files found")
+                status_checks["rankings_files"] = len(rankings_files)
+
+                return jsonify(status_checks), 200
             except Exception as e:
-                logger.error(f"File system check failed: {str(e)}")
-                status_checks["file_system"] = False
-                status_checks["rankings_file"] = False
+                error_status = {
+                    "status": "error",
+                    "error": str(e),
+                    "timestamp": datetime.now().isoformat(),
+                }
+                return jsonify(error_status), 500
+            pass
 
-            # Check scheduler
-            scheduler_running = flask_app.config.get("scheduler_running", False)
-            if hasattr(flask_app, "scheduler"):
-                status_checks["scheduler"] = flask_app.scheduler.running
-            else:
-                status_checks["scheduler"] = scheduler_running
-
-            # Determine overall status
-            critical_checks = ["file_system"]  # These must be True for "healthy" status
-            warning_checks = [
-                "nhl_api",
-                "rankings_file",
-                "scheduler",
-            ]  # These should be True but aren't critical
-
-            is_healthy = all(status_checks[check] for check in critical_checks)
-            has_warnings = not all(status_checks[check] for check in warning_checks)
-
-            status = {
-                "status": "healthy" if is_healthy else "unhealthy",
-                "timestamp": datetime.now().isoformat(),
-                "checks": status_checks,
-                "details": {
-                    "rankings_files": len(rankings_files)
-                    if "rankings_files" in locals()
-                    else 0,
-                    "filesystem_writable": status_checks["file_system"],
-                    "nhl_api_available": status_checks["nhl_api"],
-                    "scheduler_running": status_checks["scheduler"],
-                },
-            }
-
-            if has_warnings and is_healthy:
-                status["status"] = "degraded"
-
-            logger.info(f"Health check completed: {status['status']}")
-            return jsonify(status)
-
-        except Exception as e:
-            error_status = {
-                "status": "unhealthy",
-                "error": str(e),
-                "timestamp": datetime.now().isoformat(),
-            }
-            logger.error(f"Health check failed: {str(e)}", exc_info=True)
-            return jsonify(error_status), 500
-
-    return flask_app
+        # Perform initial rankings update
+        logger.info("Performing initial rankings update...")
+        clean_rankings_files()
+        initial_rankings = update_rankings()
+        if initial_rankings is not None:
+            logger.info("Initial rankings generated successfully")
+        else:
+            logger.warning("Initial rankings generation failed")
+        return flask_app
+    except Exception as e:
+        logger.error(f"Error creating Flask app: {str(e)}", exc_info=True)
+        raise
 
 
 # 6. Create the application instance
@@ -917,9 +859,16 @@ logger.info("Flask app created and configured")
 
 if __name__ == "__main__":
     try:
+        # Create the Flask application
+        app = create_app()
+        if app is None:
+            raise RuntimeError("Application factory returned None")
+
+        # Get port from environment with fallback
         port = int(os.environ.get("PORT", 5000))
+
         logger.info(f"Starting Flask app on port {port}")
         app.run(host="0.0.0.0", port=port)
     except Exception as e:
         logger.error(f"Error starting service: {str(e)}", exc_info=True)
-        raise
+        sys.exit(1)

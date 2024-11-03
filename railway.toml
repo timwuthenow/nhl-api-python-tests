@@ -1,0 +1,32 @@
+[build]
+builder = "nixpacks"
+buildCommand = "pip install -r requirements.txt"
+
+[deploy]
+startCommand = "gunicorn app:app --timeout 300 --workers 1 --threads 2 --worker-class gthread"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on-failure"
+restartPolicyMaxRetries = 5
+
+[deploy.env]
+FLASK_ENV="production"
+LOG_LEVEL="INFO"
+PORT="5000"
+UPDATE_INTERVAL_MINUTES="30"
+NHL_API_TIMEOUT="15"
+BATCH_SIZE="2"
+MAX_WORKERS="2"
+
+[[services]]
+internal_port = 5000
+protocol = "http"
+
+[services.concurrency]
+hard_limit = 25
+soft_limit = 20
+type = "connections"
+
+[services.resources]
+memory = "512MB"
+cpu = "1x"

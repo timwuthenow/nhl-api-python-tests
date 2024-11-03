@@ -1,19 +1,31 @@
-<!-- templates/error.html -->
-<!DOCTYPE html>
-<html>
-<head>
-    <title>NHL Power Rankings - Error</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <meta http-equiv="refresh" content="30"> <!-- Refresh every 30 seconds when error -->
-</head>
-<body class="bg-gray-100">
-    <div class="container mx-auto px-4 py-8">
-        <h1 class="text-3xl font-bold mb-4">NHL Power Rankings</h1>
-        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-            <strong class="font-bold">Error:</strong>
-            <span class="block sm:inline">{{ error }}</span>
-        </div>
-        <p class="mt-4 text-gray-600">Page will refresh automatically...</p>
+{% extends "base.html" %} {% block content %}
+<div class="min-h-screen flex items-center justify-center">
+  <div class="bg-white p-8 rounded-lg shadow-md max-w-md w-full">
+    <div class="text-red-600 text-center mb-4">
+      <svg
+        class="w-16 h-16 mx-auto"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+        ></path>
+      </svg>
     </div>
-</body>
-</html>
+    <h1 class="text-2xl font-bold text-gray-800 text-center mb-4">Error</h1>
+    <p class="text-gray-600 text-center mb-6">{{ error }}</p>
+    <div class="text-center">
+      <button
+        onclick="window.location.reload()"
+        class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition duration-200"
+      >
+        Retry
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}

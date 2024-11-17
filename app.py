@@ -9,6 +9,7 @@ import csv
 import requests
 import psutil
 import gc
+from threading import Lock
 from config import Config
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,6 +20,8 @@ from functools import partial
 from nhl_rankings_calculator import RankingsCalculator
 from nhl_game_processor import GameProcessor
 from nhl_stats_fetcher import NHLStatsFetcher
+
+logger = logging.getLogger(__name__)
 
 
 def initialize_rankings(flask_app):
@@ -285,7 +288,7 @@ def save_rankings(df, filename):
 
 
 def update_rankings():
-    """Update rankings data"""
+    """Update rankings data with simplified sequential processing"""
     try:
         logging.info("Starting rankings update...")
         stats_fetcher = NHLStatsFetcher()
@@ -298,115 +301,116 @@ def update_rankings():
 
         rankings_data = []
 
-        # Process each team
+        # Process each team sequentially
         for team in TEAM_CODES:
-            logging.info(f"Processing team: {team}")
             try:
-                # Get team stats and schedule
+                logging.info(f"Processing team: {team}")
+                # Get team stats
                 team_stats = stats_fetcher.get_team_stats(team, end_date)
+                if not team_stats:
+                    logging.error(f"Failed to get team stats for {team}")
+                    continue
+
+                # Get schedule
                 schedule = stats_fetcher.get_schedule(team, start_date, end_date)
-
-                if schedule:
-                    # Process games
-                    game_stats = []
-                    for game in schedule:
-                        details = stats_fetcher.get_game_details(game["id"])
-                        if details:
-                            stats = processor.process_game(details, team)
-                            if stats:
-                                game_stats.append(stats)
-
-                    if game_stats:
-                        # Calculate power play percentage
-                        total_pp_goals = sum(g["powerplay_goals"] for g in game_stats)
-                        total_pp_opportunities = sum(
-                            g["powerplay_opportunities"] for g in game_stats
-                        )
-                        pp_percentage = (
-                            (total_pp_goals / total_pp_opportunities * 100)
-                            if total_pp_opportunities > 0
-                            else 0
-                        )
-
-                        # Calculate penalty kill percentage
-                        total_pk_successes = sum(
-                            g["penalty_kill_successes"] for g in game_stats
-                        )
-                        total_times_shorthanded = sum(
-                            g["times_shorthanded"] for g in game_stats
-                        )
-                        pk_percentage = (
-                            (total_pk_successes / total_times_shorthanded * 100)
-                            if total_times_shorthanded > 0
-                            else 0
-                        )
-
-                        # Aggregate stats
-                        aggregated_stats = {
-                            "total_points": sum(g["total_points"] for g in game_stats),
-                            "games_played": len(game_stats),
-                            "wins": sum(g["wins"] for g in game_stats),
-                            "losses": sum(g["losses"] for g in game_stats),
-                            "otl": sum(g["otl"] for g in game_stats),
-                            "goals_for": sum(g["goals_for"] for g in game_stats),
-                            "goals_against": sum(
-                                g["goals_against"] for g in game_stats
-                            ),
-                            "shots_on_goal": sum(
-                                g["shots_on_goal"] for g in game_stats
-                            ),
-                            "shots_against": sum(
-                                g["shots_against"] for g in game_stats
-                            ),
-                            "powerplay_goals": total_pp_goals,
-                            "powerplay_opportunities": total_pp_opportunities,
-                            "penalty_kill_successes": total_pk_successes,
-                            "times_shorthanded": total_times_shorthanded,
-                            "powerplay_percentage": pp_percentage,
-                            "penalty_kill_percentage": pk_percentage,
-                            "road_wins": sum(g["road_wins"] for g in game_stats),
-                            "scoring_first": sum(
-                                g["scoring_first"] for g in game_stats
-                            ),
-                            "comeback_wins": sum(
-                                g["comeback_wins"] for g in game_stats
-                            ),
-                            "one_goal_games": sum(
-                                g["one_goal_games"] for g in game_stats
-                            ),
-                            "last_10_results": [
-                                g.get("last_10", 0) for g in game_stats
-                            ][-10:],
-                        }
-
-                        team_ranking = calculator.calculate_team_score(
-                            aggregated_stats, team_stats, team
-                        )
-                        if team_ranking:
-                            # Ensure special teams percentages are included in team_ranking
-                            team_ranking["powerplay_percentage"] = pp_percentage
-                            team_ranking["penalty_kill_percentage"] = pk_percentage
-
-                            rankings_data.append(team_ranking)
-                            logging.info(f"Successfully processed rankings for {team}")
-                else:
+                if not schedule:
                     logging.warning(f"No schedule found for {team}")
+                    continue
+
+                # Process games
+                game_stats = []
+                for game in schedule:
+                    game_id = game.get("id")
+                    if not game_id:
+                        continue
+
+                    details = stats_fetcher.get_game_details(game_id)
+                    if details:
+                        stats = processor.process_game(details, team)
+                        if stats:
+                            game_stats.append(stats)
+
+                if not game_stats:
+                    logging.warning(f"No valid game stats found for {team}")
+                    continue
+
+                # Calculate aggregated stats
+                total_pp_goals = sum(g.get("powerplay_goals", 0) for g in game_stats)
+                total_pp_opportunities = sum(
+                    g.get("powerplay_opportunities", 0) for g in game_stats
+                )
+                total_pk_successes = sum(
+                    g.get("penalty_kill_successes", 0) for g in game_stats
+                )
+                total_times_shorthanded = sum(
+                    g.get("times_shorthanded", 0) for g in game_stats
+                )
+
+                # Calculate percentages
+                pp_percentage = (
+                    (total_pp_goals / total_pp_opportunities * 100)
+                    if total_pp_opportunities > 0
+                    else 0
+                )
+                pk_percentage = (
+                    (total_pk_successes / total_times_shorthanded * 100)
+                    if total_times_shorthanded > 0
+                    else 0
+                )
+
+                # Aggregate other stats
+                aggregated_stats = {
+                    "total_points": sum(g.get("total_points", 0) for g in game_stats),
+                    "games_played": len(game_stats),
+                    "wins": sum(g.get("wins", 0) for g in game_stats),
+                    "losses": sum(g.get("losses", 0) for g in game_stats),
+                    "otl": sum(g.get("otl", 0) for g in game_stats),
+                    "goals_for": sum(g.get("goals_for", 0) for g in game_stats),
+                    "goals_against": sum(g.get("goals_against", 0) for g in game_stats),
+                    "shots_on_goal": sum(g.get("shots_on_goal", 0) for g in game_stats),
+                    "shots_against": sum(g.get("shots_against", 0) for g in game_stats),
+                    "powerplay_goals": total_pp_goals,
+                    "powerplay_opportunities": total_pp_opportunities,
+                    "penalty_kill_successes": total_pk_successes,
+                    "times_shorthanded": total_times_shorthanded,
+                    "powerplay_percentage": pp_percentage,
+                    "penalty_kill_percentage": pk_percentage,
+                    "road_wins": sum(g.get("road_wins", 0) for g in game_stats),
+                    "scoring_first": sum(g.get("scoring_first", 0) for g in game_stats),
+                    "comeback_wins": sum(g.get("comeback_wins", 0) for g in game_stats),
+                    "one_goal_games": sum(
+                        g.get("one_goal_games", 0) for g in game_stats
+                    ),
+                    "last_10_results": [g.get("last_10", 0) for g in game_stats][-10:],
+                }
+
+                # Calculate team ranking
+                team_ranking = calculator.calculate_team_score(
+                    aggregated_stats, team_stats, team
+                )
+                if team_ranking:
+                    team_ranking["powerplay_percentage"] = pp_percentage
+                    team_ranking["penalty_kill_percentage"] = pk_percentage
+                    rankings_data.append(team_ranking)
+                    logging.info(f"Successfully processed rankings for {team}")
+                    logging.info(f"PP%: {pp_percentage:.1f}, PK%: {pk_percentage:.1f}")
 
             except Exception as e:
-                logging.error(f"Error processing {team}: {str(e)}")
+                logging.error(f"Error processing team {team}: {str(e)}")
                 continue
 
-        # Create and save DataFrame
+        # Create and save DataFrame if we have data
         if rankings_data:
             df = pd.DataFrame(rankings_data)
             now = datetime.now()
             filename = f'nhl_power_rankings_{now.strftime("%Y%m%d")}.csv'
 
-            # Log the data before saving to verify special teams stats
-            logging.info(f"Special teams stats for verification:")
+            # Log verification data
+            logging.info("Special teams stats for verification:")
             for team_data in rankings_data:
                 logging.info(
-                    f"{team_data['team']}: PP% = {team_data['powerplay_percentage']:.1f}, PK% = {team_data['penalty_kill_percentage']:.1f}"
+                    f"{team_data['team']}: PP% = {team_data['powerplay_percentage']:.1f}, "
+                    f"PK% = {team_data['penalty_kill_percentage']:.1f}"
                 )
 
             if save_rankings(df, filename):
@@ -511,143 +515,187 @@ def log_memory_usage():
     logger.info(f"Memory usage: {mem_info.rss / 1024 / 1024:.2f} MB")
 
 
-def update_rankings_parallel():
-    """Railway-optimized parallel rankings update with incremental CSV writing"""
-    try:
-        logger.info("Starting parallel rankings update...")
-        stats_fetcher = NHLStatsFetcher()
-        calculator = RankingsCalculator()
-        processor = GameProcessor()
+# # Create a lock for the update process
+# update_lock = Lock()
 
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=14)
 
-        # Initialize CSV file early
-        now = datetime.now()
-        filename = f'nhl_power_rankings_{now.strftime("%Y%m%d")}.csv'
-        temp_filename = f"temp_{filename}"
+# def update_rankings_parallel():
+#     """Railway-optimized parallel rankings update with incremental CSV writing"""
+#     if not update_lock.acquire(blocking=False):
+#         logger.warning("Rankings update already in progress, skipping")
+#         return None
 
-        # Write headers
-        headers = [
-            "team",
-            "points",
-            "games_played",
-            "goals_for",
-            "goals_against",
-            "goal_differential",
-            "points_percentage",
-            "powerplay_percentage",
-            "penalty_kill_percentage",
-            "score",
-        ]
+#     try:
+#         logger.info("Starting parallel rankings update...")
+#         stats_fetcher = NHLStatsFetcher()
+#         calculator = RankingsCalculator()
+#         processor = GameProcessor()
 
-        with open(temp_filename, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=headers)
-            writer.writeheader()
+#         end_date = datetime.now()
+#         start_date = end_date - timedelta(days=14)
 
-        # Process teams in very small batches to control memory usage
-        BATCH_SIZE = 2  # Reduced batch size for Railway
-        processed_count = 0
+#         # Initialize CSV file early
+#         now = datetime.now()
+#         filename = f'nhl_power_rankings_{now.strftime("%Y%m%d")}.csv'
+#         temp_filename = f"temp_{filename}"
 
-        for i in range(0, len(TEAM_CODES), BATCH_SIZE):
-            batch = TEAM_CODES[i : i + BATCH_SIZE]
-            logger.info(f"Processing batch of teams: {batch}")
-            batch_rankings = []
+#         # Write headers
+#         headers = [
+#             "team",
+#             "points",
+#             "games_played",
+#             "goals_for",
+#             "goals_against",
+#             "goal_differential",
+#             "points_percentage",
+#             "powerplay_percentage",
+#             "penalty_kill_percentage",
+#             "score",
+#         ]
 
-            # Process batch with limited threads
-            with ThreadPoolExecutor(max_workers=2) as executor:  # Reduced thread count
-                process_func = partial(
-                    process_team_rankings,
-                    start_date=start_date,
-                    end_date=end_date,
-                    stats_fetcher=stats_fetcher,
-                    calculator=calculator,
-                    processor=processor,
-                )
+#         # Ensure any existing temp file is removed
+#         if os.path.exists(temp_filename):
+#             os.remove(temp_filename)
 
-                future_to_team = {
-                    executor.submit(process_func, team): team for team in batch
-                }
+#         with open(temp_filename, "w", newline="") as f:
+#             writer = csv.DictWriter(f, fieldnames=headers)
+#             writer.writeheader()
 
-                for future in as_completed(future_to_team):
-                    team = future_to_team[future]
-                    try:
-                        team_ranking = future.result()
-                        if team_ranking:
-                            # Round values before writing
-                            team_ranking["powerplay_percentage"] = round(
-                                team_ranking.get("powerplay_percentage", 0), 1
-                            )
-                            team_ranking["penalty_kill_percentage"] = round(
-                                team_ranking.get("penalty_kill_percentage", 0), 1
-                            )
-                            team_ranking["points_percentage"] = round(
-                                team_ranking.get("points_percentage", 0), 3
-                            )
-                            team_ranking["score"] = round(
-                                team_ranking.get("score", 0), 2
-                            )
+#         # Process teams in very small batches to control memory usage
+#         BATCH_SIZE = 2  # Reduced batch size for Railway
+#         processed_count = 0
+#         total_teams = len(TEAM_CODES)
+#         failed_teams = []
 
-                            batch_rankings.append(team_ranking)
-                            processed_count += 1
-                            logger.info(f"Successfully processed rankings for {team}")
-                    except Exception as e:
-                        logger.error(f"Error processing {team}: {str(e)}")
+#         for i in range(0, total_teams, BATCH_SIZE):
+#             batch = TEAM_CODES[i : i + BATCH_SIZE]
+#             logger.info(
+#                 f"Processing batch of teams: {batch} ({i+1}-{min(i+BATCH_SIZE, total_teams)} of {total_teams})"
+#             )
+#             batch_rankings = []
 
-            # Write batch to CSV
-            if batch_rankings:
-                with open(temp_filename, "a", newline="") as f:
-                    writer = csv.DictWriter(f, fieldnames=headers)
-                    for ranking in batch_rankings:
-                        writer.writerow(ranking)
+#             # Process batch with limited threads
+#             with ThreadPoolExecutor(max_workers=2) as executor:
+#                 process_func = partial(
+#                     process_team_rankings,
+#                     start_date=start_date,
+#                     end_date=end_date,
+#                     stats_fetcher=stats_fetcher,
+#                     calculator=calculator,
+#                     processor=processor,
+#                 )
 
-                logger.info(
-                    f"Wrote batch of {len(batch_rankings)} teams to temporary CSV"
-                )
+#                 future_to_team = {
+#                     executor.submit(process_func, team): team for team in batch
+#                 }
 
-            # Clear memory after each batch
-            batch_rankings = []
-            processor.clear_cache()
-            gc.collect()
+#                 for future in as_completed(future_to_team):
+#                     team = future_to_team[future]
+#                     try:
+#                         team_ranking = future.result()
+#                         if team_ranking:
+#                             # Validate and round values
+#                             team_ranking["powerplay_percentage"] = round(
+#                                 float(team_ranking.get("powerplay_percentage", 0)), 1
+#                             )
+#                             team_ranking["penalty_kill_percentage"] = round(
+#                                 float(team_ranking.get("penalty_kill_percentage", 0)), 1
+#                             )
+#                             team_ranking["points_percentage"] = round(
+#                                 float(team_ranking.get("points_percentage", 0)), 3
+#                             )
+#                             team_ranking["score"] = round(
+#                                 float(team_ranking.get("score", 0)), 2
+#                             )
 
-            # Log memory usage
-            process = psutil.Process(os.getpid())
-            logger.info(
-                f"Memory usage after batch: {process.memory_info().rss / 1024 / 1024:.1f} MB"
-            )
+#                             # Validate required fields
+#                             if all(key in team_ranking for key in headers):
+#                                 batch_rankings.append(team_ranking)
+#                                 processed_count += 1
+#                                 logger.info(
+#                                     f"Successfully processed rankings for {team}"
+#                                 )
+#                             else:
+#                                 logger.error(f"Missing required fields for {team}")
+#                                 failed_teams.append(team)
+#                     except Exception as e:
+#                         logger.error(f"Error processing {team}: {str(e)}")
+#                         failed_teams.append(team)
 
-        # If we processed any teams, finalize the CSV
-        if processed_count > 0:
-            try:
-                # Read the temp CSV and sort by score
-                df = pd.read_csv(temp_filename)
-                df = df.sort_values("score", ascending=False)
-                df.to_csv(filename, index=False)
+#             # Write batch to CSV
+#             if batch_rankings:
+#                 try:
+#                     with open(temp_filename, "a", newline="") as f:
+#                         writer = csv.DictWriter(f, fieldnames=headers)
+#                         for ranking in batch_rankings:
+#                             writer.writerow(ranking)
 
-                # Clean up temp file
-                os.remove(temp_filename)
+#                     logger.info(
+#                         f"Wrote batch of {len(batch_rankings)} teams to temporary CSV"
+#                     )
+#                 except Exception as e:
+#                     logger.error(f"Error writing to CSV: {str(e)}")
 
-                logger.info(
-                    f"Successfully created final rankings for {processed_count} teams"
-                )
-                return df
-            except Exception as e:
-                logger.error(f"Error finalizing CSV: {str(e)}")
-                if os.path.exists(temp_filename):
-                    os.remove(temp_filename)
-                return None
-        else:
-            logger.error("No rankings data generated")
-            if os.path.exists(temp_filename):
-                os.remove(temp_filename)
-            return None
+#             # Clear memory after each batch
+#             batch_rankings = []
+#             processor.clear_cache()
+#             gc.collect()
 
-    except Exception as e:
-        logger.error(f"Error in parallel rankings update: {str(e)}")
-        logger.error("Exception details:", exc_info=True)
-        if os.path.exists(temp_filename):
-            os.remove(temp_filename)
-        return None
+#             # Log memory usage
+#             process = psutil.Process(os.getpid())
+#             memory_mb = process.memory_info().rss / 1024 / 1024
+#             logger.info(f"Memory usage after batch: {memory_mb:.1f} MB")
+
+#         # If we processed any teams, finalize the CSV
+#         if processed_count > 0:
+#             try:
+#                 # Read the temp CSV and sort by score
+#                 df = pd.read_csv(temp_filename)
+
+#                 # Validate data
+#                 if len(df) != processed_count:
+#                     logger.warning(
+#                         f"Mismatch in processed teams: CSV has {len(df)}, expected {processed_count}"
+#                     )
+
+#                 # Sort by score and write final file
+#                 df = df.sort_values("score", ascending=False)
+#                 df.to_csv(filename, index=False)
+
+#                 # Clean up temp file
+#                 if os.path.exists(temp_filename):
+#                     os.remove(temp_filename)
+
+#                 logger.info(
+#                     f"Successfully created final rankings for {processed_count} teams"
+#                 )
+
+#                 if failed_teams:
+#                     logger.warning(
+#                         f"Failed to process teams: {', '.join(failed_teams)}"
+#                     )
+
+#                 return df
+#             except Exception as e:
+#                 logger.error(f"Error finalizing CSV: {str(e)}")
+#                 if os.path.exists(temp_filename):
+#                     os.remove(temp_filename)
+#                 return None
+#         else:
+#             logger.error("No rankings data generated")
+#             if os.path.exists(temp_filename):
+#                 os.remove(temp_filename)
+#             return None
+
+#     except Exception as e:
+#         logger.error(f"Error in parallel rankings update: {str(e)}")
+#         logger.error("Exception details:", exc_info=True)
+#         if "temp_filename" in locals() and os.path.exists(temp_filename):
+#             os.remove(temp_filename)
+#         return None
+#     finally:
+#         update_lock.release()
+#         logger.info("Rankings update lock released")
 
 
 def get_memory_usage():
@@ -680,7 +728,7 @@ def create_app():
             executors={"default": {"type": "threadpool", "max_workers": 4}}
         )
         scheduler.add_job(
-            func=update_rankings_parallel,
+            func=update_rankings,
             trigger="interval",
             minutes=Config.UPDATE_INTERVAL_MINUTES,
             max_instances=1,

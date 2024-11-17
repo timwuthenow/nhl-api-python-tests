@@ -2,7 +2,8 @@
 import logging
 import requests
 from functools import lru_cache
-import hashlib
+
+logger = logging.getLogger(__name__)  # Add this line at the top
 
 
 class GameProcessor:
@@ -17,6 +18,9 @@ class GameProcessor:
     def process_game(self, game_details, team):
         """Process game with caching"""
         try:
+            if not game_details.get("gamePk"):
+                return self.process_game_static(game_details, team)
+
             cache_key = self.get_game_cache_key(game_details["gamePk"], team)
 
             # Check if we already processed this game
@@ -27,7 +31,7 @@ class GameProcessor:
                 return self._game_cache[cache_key]
 
             # Process game normally
-            stats = self._process_game_details(game_details, team)
+            stats = self.process_game_static(game_details, team)
 
             # Cache the results
             if stats:
@@ -37,13 +41,14 @@ class GameProcessor:
 
         except Exception as e:
             logger.error(
-                f"Error processing game {game_details.get('gamePk')}: {str(e)}"
+                f"Error processing game {game_details.get('gamePk', 'unknown')}: {str(e)}"
             )
             return None
 
     def clear_cache(self):
         """Clear the game cache"""
         self._game_cache.clear()
+        self.get_game_cache_key.cache_clear()  # Clear the lru_cache as well
 
     @staticmethod
     def _get_first_goal_team(game_id):
@@ -61,11 +66,11 @@ class GameProcessor:
                     return first_goal.get("details", {}).get("eventOwnerTeamId")
             return None
         except Exception as e:
-            logging.error(f"Error getting first goal team: {str(e)}")
+            logger.error(f"Error getting first goal team: {str(e)}")
             return None
 
     @staticmethod
-    def process_game(game_details, team_code, game_id=None):
+    def process_game_static(game_details, team_code):
         """Process individual game data and return statistics."""
         game_stats = {
             "total_points": 0,
@@ -98,11 +103,11 @@ class GameProcessor:
         }
 
         if not game_details:
-            logging.warning(f"No game details available for team {team_code}")
+            logger.warning(f"No game details available for team {team_code}")
             return game_stats
 
         try:
-            logging.debug(f"Processing game details for {team_code}")
+            logger.debug(f"Processing game details for {team_code}")
 
             # Determine home/away and get team data
             is_home = game_details.get("homeTeam", {}).get("abbrev") == team_code
@@ -179,12 +184,6 @@ class GameProcessor:
                     game_stats["times_shorthanded"] - opponent_pp_goals
                 )
 
-            # Process first goal
-            if game_id:
-                first_goal_team_id = GameProcessor._get_first_goal_team(game_id)
-                if first_goal_team_id == team_id:
-                    game_stats["scoring_first"] = 1
-
             # Process game outcome
             if game_stats["goals_for"] > game_stats["goals_against"]:
                 game_stats["wins"] = 1
@@ -227,11 +226,11 @@ class GameProcessor:
             if score_diff == 1 or (score_diff - empty_net_goals == 1):
                 game_stats["one_goal_games"] = 1
 
-            logging.info(f"Processed game stats for {team_code}: {game_stats}")
+            logger.info(f"Processed game stats for {team_code}: {game_stats}")
             return game_stats
 
         except Exception as e:
-            logging.error(
+            logger.error(
                 f"Error processing game for {team_code}: {str(e)}", exc_info=True
             )
             return game_stats
@@ -246,136 +245,3 @@ class GameProcessor:
             return 0, 0
         except (ValueError, AttributeError):
             return 0, 0
-
-    @staticmethod
-    def aggregate_stats(game_stats_list):
-        """
-        Aggregate statistics from multiple games into season totals.
-
-        Args:
-            game_stats_list (list): List of dictionaries containing individual game statistics
-
-        Returns:
-            dict: Aggregated season statistics
-        """
-        logging.info(f"Aggregating stats from {len(game_stats_list)} games")
-
-        # Initialize totals
-        total_stats = {
-            "total_points": 0,
-            "games_played": len(game_stats_list),
-            "wins": 0,
-            "losses": 0,
-            "otl": 0,
-            "goals_for": 0,
-            "goals_against": 0,
-            "shots_on_goal": 0,
-            "shots_against": 0,
-            "even_strength_shots_for": 0,
-            "even_strength_shots_against": 0,
-            "powerplay_shots_for": 0,
-            "powerplay_shots_against": 0,
-            "shorthanded_shots_for": 0,
-            "shorthanded_shots_against": 0,
-            "high_danger_chances_for": 0,
-            "high_danger_chances_against": 0,
-            "last_10_results": [],
-            "road_wins": 0,
-            "scoring_first": 0,
-            "comeback_wins": 0,
-            "one_goal_games": 0,
-            "powerplay_goals": 0,
-            "powerplay_opportunities": 0,
-            "penalty_kill_successes": 0,
-            "times_shorthanded": 0,
-            "empty_net_goals": 0,
-        }
-
-        # First pass: Sum up all raw statistics
-        for i, game in enumerate(game_stats_list, 1):
-            logging.debug(f"Processing game {i} stats")
-
-            # Add up all counting stats
-            for key in total_stats:
-                if key == "last_10_results":
-                    if "last_10" in game:
-                        total_stats["last_10_results"].append(game["last_10"])
-                elif (
-                    key != "games_played"
-                ):  # games_played is calculated from list length
-                    total_stats[key] += game.get(key, 0)
-
-            logging.debug(
-                f"Running totals after game {i}: "
-                f"GF={total_stats['goals_for']}, "
-                f"GA={total_stats['goals_against']}, "
-                f"SOG={total_stats['shots_on_goal']}, "
-                f"Points={total_stats['total_points']}"
-            )
-
-        # Second pass: Calculate percentages and rates
-        games = total_stats["games_played"]
-        if games > 0:
-            # Shooting stats
-            if total_stats["shots_on_goal"] > 0:
-                total_stats["shooting_percentage"] = (
-                    total_stats["goals_for"] / total_stats["shots_on_goal"] * 100
-                )
-            else:
-                total_stats["shooting_percentage"] = 0.0
-
-            # Save percentage
-            if total_stats["shots_against"] > 0:
-                total_stats["save_percentage"] = (
-                    (total_stats["shots_against"] - total_stats["goals_against"])
-                    / total_stats["shots_against"]
-                    * 100
-                )
-            else:
-                total_stats["save_percentage"] = 0.0
-
-            # Special teams
-            if total_stats["powerplay_opportunities"] > 0:
-                total_stats["powerplay_percentage"] = (
-                    total_stats["powerplay_goals"]
-                    / total_stats["powerplay_opportunities"]
-                    * 100
-                )
-            else:
-                total_stats["powerplay_percentage"] = 0.0
-
-            if total_stats["times_shorthanded"] > 0:
-                total_stats["penalty_kill_percentage"] = (
-                    total_stats["penalty_kill_successes"]
-                    / total_stats["times_shorthanded"]
-                    * 100
-                )
-            else:
-                total_stats["penalty_kill_percentage"] = 0.0
-
-            # Other percentages
-            total_stats["points_percentage"] = (
-                total_stats["total_points"] / (games * 2) * 100
-            )
-            total_stats["scoring_first_percentage"] = (
-                total_stats["scoring_first"] / games * 100
-            )
-            total_stats["close_game_percentage"] = (
-                total_stats["one_goal_games"] / games * 100
-            )
-            if total_stats["wins"] > 0:
-                total_stats["comeback_percentage"] = (
-                    total_stats["comeback_wins"] / total_stats["wins"] * 100
-                )
-            else:
-                total_stats["comeback_percentage"] = 0.0
-
-        # Log final totals
-        logging.info("Final aggregated stats:")
-        for key, value in total_stats.items():
-            if isinstance(value, (int, float)):
-                logging.info(f"{key}: {value:.1f}")
-            else:
-                logging.info(f"{key}: {value}")
-
-        return total_stats

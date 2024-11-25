@@ -1,9 +1,8 @@
-# nhl_game_processor.py
 import logging
 import requests
 from functools import lru_cache
 
-logger = logging.getLogger(__name__)  # Add this line at the top
+logger = logging.getLogger(__name__)
 
 
 class GameProcessor:
@@ -15,174 +14,120 @@ class GameProcessor:
         """Create a unique cache key for game results"""
         return f"{game_id}_{team}"
 
-    def process_game(self, game_details, team):
-        """Process game with caching"""
+    def process_game(self, game_details, team_code):
+        """Process game with enhanced stats collection."""
         try:
             if not game_details.get("gamePk"):
-                return self.process_game_static(game_details, team)
+                return self.process_game_static(game_details, team_code)
 
-            cache_key = self.get_game_cache_key(game_details["gamePk"], team)
+            cache_key = self.get_game_cache_key(game_details["gamePk"], team_code)
 
-            # Check if we already processed this game
+            # Check cache
             if cache_key in self._game_cache:
-                logger.debug(
-                    f"Using cached results for game {game_details['gamePk']} and team {team}"
-                )
                 return self._game_cache[cache_key]
 
-            # Process game normally
-            stats = self.process_game_static(game_details, team)
+            # Get processed game stats
+            stats = self.process_game_static(game_details, team_code)
 
-            # Cache the results
             if stats:
                 self._game_cache[cache_key] = stats
 
             return stats
 
         except Exception as e:
-            logger.error(
-                f"Error processing game {game_details.get('gamePk', 'unknown')}: {str(e)}"
-            )
+            logger.error(f"Error processing game: {str(e)}")
             return None
 
     def clear_cache(self):
         """Clear the game cache"""
         self._game_cache.clear()
-        self.get_game_cache_key.cache_clear()  # Clear the lru_cache as well
-
-    @staticmethod
-    def _get_first_goal_team(game_id):
-        """Get the team that scored first from play-by-play data."""
-        try:
-            url = f"https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play"
-            response = requests.get(url)
-            if response.ok:
-                plays = response.json().get("plays", [])
-                # Find first goal event
-                first_goal = next(
-                    (play for play in plays if play.get("typeDescKey") == "goal"), None
-                )
-                if first_goal:
-                    return first_goal.get("details", {}).get("eventOwnerTeamId")
-            return None
-        except Exception as e:
-            logger.error(f"Error getting first goal team: {str(e)}")
-            return None
+        self.get_game_cache_key.cache_clear()
 
     @staticmethod
     def process_game_static(game_details, team_code):
-        """Process individual game data and return statistics."""
-        game_stats = {
-            "total_points": 0,
-            "games_played": 1,
-            "wins": 0,
-            "losses": 0,
-            "otl": 0,
-            "goals_for": 0,
-            "goals_against": 0,
-            "shots_on_goal": 0,
-            "shots_against": 0,
-            "even_strength_shots_for": 0,
-            "even_strength_shots_against": 0,
-            "powerplay_shots_for": 0,
-            "powerplay_shots_against": 0,
-            "shorthanded_shots_for": 0,
-            "shorthanded_shots_against": 0,
-            "high_danger_chances_for": 0,
-            "high_danger_chances_against": 0,
-            "last_10": 0,
-            "road_wins": 0,
-            "scoring_first": 0,
-            "comeback_wins": 0,
-            "one_goal_games": 0,
-            "powerplay_goals": 0,
-            "powerplay_opportunities": 0,
-            "penalty_kill_successes": 0,
-            "times_shorthanded": 0,
-            "empty_net_goals": 0,
-        }
-
+        """Process individual game data with improved stats tracking."""
         if not game_details:
             logger.warning(f"No game details available for team {team_code}")
-            return game_stats
+            return None
 
         try:
-            logger.debug(f"Processing game details for {team_code}")
-
             # Determine home/away and get team data
             is_home = game_details.get("homeTeam", {}).get("abbrev") == team_code
             team_data = game_details.get("homeTeam" if is_home else "awayTeam", {})
             opponent_data = game_details.get("awayTeam" if is_home else "homeTeam", {})
 
-            # Get team IDs
-            team_id = team_data.get("id")
-            opponent_id = opponent_data.get("id")
+            # Initialize game stats
+            game_stats = {
+                "total_points": 0,
+                "games_played": 1,
+                "wins": 0,
+                "losses": 0,
+                "otl": 0,
+                "goals_for": int(team_data.get("score", 0)),
+                "goals_against": int(opponent_data.get("score", 0)),
+                "shots_on_goal": int(team_data.get("sog", 0)),
+                "shots_against": int(opponent_data.get("sog", 0)),
+                "powerplay_goals": 0,
+                "powerplay_opportunities": 0,
+                "times_shorthanded": 0,
+                "pk_goals_against": 0,
+                "penalty_kill_successes": 0,
+                "high_danger_chances_for": 0,
+                "high_danger_chances_against": 0,
+                "empty_net_goals": 0,
+                "last_10": 0,
+                "road_wins": 0,
+            }
 
-            # Extract basic stats
-            game_stats["goals_for"] = int(team_data.get("score", 0))
-            game_stats["goals_against"] = int(opponent_data.get("score", 0))
-            game_stats["shots_on_goal"] = int(team_data.get("sog", 0))
-            game_stats["shots_against"] = int(opponent_data.get("sog", 0))
-
-            # Get player stats
+            # Get power play stats from player stats
             player_stats = game_details.get("playerByGameStats", {})
-            team_players = player_stats.get("homeTeam" if is_home else "awayTeam", {})
-            opponent_players = player_stats.get(
-                "awayTeam" if is_home else "homeTeam", {}
+            our_team = player_stats.get("homeTeam" if is_home else "awayTeam", {})
+            opp_team = player_stats.get("awayTeam" if is_home else "homeTeam", {})
+
+            # Get power play stats from goalies
+            opp_goalies = opp_team.get("goalies", [])
+            our_goalies = our_team.get("goalies", [])
+            opp_starter = next(
+                (g for g in opp_goalies if g.get("starter", False)), None
             )
-
-            # Process special teams stats
-            for player_type in ["forwards", "defense"]:
-                for player in team_players.get(player_type, []):
-                    game_stats["powerplay_goals"] += int(
-                        player.get("powerPlayGoals", 0)
-                    )
-
-            # Process goalie stats for shot breakdowns
-            goalies = opponent_players.get("goalies", [])
-            starter_goalie = next((g for g in goalies if g.get("starter", False)), None)
-            if starter_goalie:
-                es_shots = GameProcessor._parse_shot_string(
-                    starter_goalie.get("evenStrengthShotsAgainst", "0/0")
-                )
-                pp_shots = GameProcessor._parse_shot_string(
-                    starter_goalie.get("powerPlayShotsAgainst", "0/0")
-                )
-                sh_shots = GameProcessor._parse_shot_string(
-                    starter_goalie.get("shorthandedShotsAgainst", "0/0")
-                )
-
-                game_stats["even_strength_shots_for"] = es_shots[1]
-                game_stats["powerplay_shots_for"] = pp_shots[1]
-                game_stats["shorthanded_shots_for"] = sh_shots[1]
-                game_stats["powerplay_opportunities"] = pp_shots[1]
-
-            # Process team's goalie stats
-            our_goalies = team_players.get("goalies", [])
             our_starter = next(
                 (g for g in our_goalies if g.get("starter", False)), None
             )
-            if our_starter:
-                es_shots = GameProcessor._parse_shot_string(
-                    our_starter.get("evenStrengthShotsAgainst", "0/0")
-                )
+
+            if opp_starter:
+                # Our power play stats come from opponent's goalie
                 pp_shots = GameProcessor._parse_shot_string(
+                    opp_starter.get("powerPlayShotsAgainst", "0/0")
+                )
+                game_stats["powerplay_opportunities"] = pp_shots[
+                    1
+                ]  # Total PP shots faced
+                game_stats["powerplay_goals"] = int(
+                    opp_starter.get("powerPlayGoalsAgainst", 0)
+                )
+
+            if our_starter:
+                # Our PK stats come from our goalie's stats
+                pk_shots = GameProcessor._parse_shot_string(
                     our_starter.get("powerPlayShotsAgainst", "0/0")
                 )
-                sh_shots = GameProcessor._parse_shot_string(
-                    our_starter.get("shorthandedShotsAgainst", "0/0")
+                game_stats["times_shorthanded"] = pk_shots[1]  # Total PP shots we faced
+                game_stats["pk_goals_against"] = int(
+                    our_starter.get("powerPlayGoalsAgainst", 0)
                 )
 
-                game_stats["even_strength_shots_against"] = es_shots[1]
-                game_stats["powerplay_shots_against"] = pp_shots[1]
-                game_stats["shorthanded_shots_against"] = sh_shots[1]
-                game_stats["times_shorthanded"] = pp_shots[1]
-
-                # Calculate PK success using opponent PP goals
-                opponent_pp_goals = int(our_starter.get("powerPlayGoalsAgainst", 0))
+            # Calculate PK successes
+            if game_stats["times_shorthanded"] > 0:
                 game_stats["penalty_kill_successes"] = (
-                    game_stats["times_shorthanded"] - opponent_pp_goals
+                    game_stats["times_shorthanded"] - game_stats["pk_goals_against"]
                 )
+
+            # Process power play goals from skaters as backup
+            for section in ["forwards", "defense"]:
+                for player in our_team.get(section, []):
+                    pp_goals = int(player.get("powerPlayGoals", 0))
+                    if pp_goals > game_stats["powerplay_goals"]:
+                        game_stats["powerplay_goals"] = pp_goals
 
             # Process game outcome
             if game_stats["goals_for"] > game_stats["goals_against"]:
@@ -191,10 +136,7 @@ class GameProcessor:
                 game_stats["last_10"] = 1
                 if not is_home:
                     game_stats["road_wins"] = 1
-                # Only count comeback if we didn't score first
-                if game_stats["scoring_first"] == 0:
-                    game_stats["comeback_wins"] = 1
-            elif game_stats["goals_for"] < game_stats["goals_against"]:
+            else:
                 game_state = game_details.get("gameState", "")
                 period_desc = game_details.get("periodDescriptor", {}).get(
                     "periodType", ""
@@ -211,29 +153,36 @@ class GameProcessor:
                 else:
                     game_stats["losses"] = 1
 
-            # Track empty net goals and one-goal games
-            scoring = game_details.get("summary", {}).get("scoring", [])
-            empty_net_goals = 0
-            if scoring:
-                for goal in scoring:
-                    if goal.get("emptyNet", False):
-                        empty_net_goals += 1
+            # Process high danger chances and empty net goals
+            for play in game_details.get("summary", {}).get("scoring", []):
+                if play.get("typeDescKey") in ["shot", "goal"]:
+                    details = play.get("details", {})
+                    shot_type = details.get("shotType", "")
+                    distance = details.get("shotDistance", 999)
+                    is_team_shot = (
+                        is_home and details.get("eventOwnerTeamType") == "home"
+                    ) or (not is_home and details.get("eventOwnerTeamType") == "away")
 
-            game_stats["empty_net_goals"] = empty_net_goals
+                    if (
+                        shot_type in ["Deflected", "Tip-In", "Wrap-around"]
+                        or distance <= 15
+                    ):
+                        if is_team_shot:
+                            game_stats["high_danger_chances_for"] += 1
+                        else:
+                            game_stats["high_danger_chances_against"] += 1
 
-            # One goal games exclude empty netters
-            score_diff = abs(game_stats["goals_for"] - game_stats["goals_against"])
-            if score_diff == 1 or (score_diff - empty_net_goals == 1):
-                game_stats["one_goal_games"] = 1
+                    if play.get("emptyNet", False) and is_team_shot:
+                        game_stats["empty_net_goals"] += 1
 
-            logger.info(f"Processed game stats for {team_code}: {game_stats}")
+            logger.info(f"Final processed stats for {team_code}: {game_stats}")
             return game_stats
 
         except Exception as e:
             logger.error(
                 f"Error processing game for {team_code}: {str(e)}", exc_info=True
             )
-            return game_stats
+            return None
 
     @staticmethod
     def _parse_shot_string(shot_string):

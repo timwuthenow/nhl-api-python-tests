@@ -9,6 +9,7 @@ import csv
 import requests
 import psutil
 import gc
+from collections import OrderedDict
 from threading import Lock
 from config import Config
 
@@ -39,46 +40,11 @@ def initialize_rankings(flask_app):
 
 
 def test_nhl_api_connection():
-    """Test NHL API connectivity with improved DNS resolution and fallback"""
+    """Test NHL API connectivity"""
     logger.info("Testing NHL API connectivity...")
     try:
-        api_host = os.getenv("NHL_API_HOST", "statsapi.web.nhl.com")
+        url = "https://api-web.nhle.com/v1/standings/now"
         timeout = int(os.getenv("NHL_API_TIMEOUT", 20))
-
-        # Try multiple DNS resolvers
-        ip_address = None
-        dns_servers = [
-            "8.8.8.8",  # Google DNS
-            "1.1.1.1",  # Cloudflare DNS
-            "9.9.9.9",  # Quad9 DNS
-        ]
-
-        for dns_server in dns_servers:
-            try:
-                import dns.resolver
-
-                resolver = dns.resolver.Resolver()
-                resolver.nameservers = [dns_server]
-                answers = resolver.resolve(api_host, "A")
-                ip_address = answers[0].address
-                logger.info(
-                    f"Successfully resolved {api_host} to {ip_address} using DNS server {dns_server}"
-                )
-                break
-            except Exception as e:
-                logger.warning(f"DNS resolution failed with {dns_server}: {str(e)}")
-                continue
-
-        if not ip_address:
-            # Try system DNS as last resort
-            try:
-                import socket
-
-                ip_address = socket.gethostbyname(api_host)
-                logger.info(f"Resolved {api_host} using system DNS to {ip_address}")
-            except socket.gaierror as e:
-                logger.error(f"All DNS resolution attempts failed for {api_host}")
-                return False
 
         # Test the connection with retry logic
         session = requests.Session()
@@ -88,30 +54,10 @@ def test_nhl_api_connection():
         session.mount("http://", requests.adapters.HTTPAdapter(max_retries=retries))
         session.mount("https://", requests.adapters.HTTPAdapter(max_retries=retries))
 
-        # Try direct IP connection first
-        try:
-            headers = {"Host": api_host}
-            response = session.get(
-                f"https://{ip_address}/api/v1/teams",
-                headers=headers,
-                timeout=timeout,
-                verify=True,
-            )
-            logger.info(f"Direct IP connection successful: {response.status_code}")
-            return response.status_code == 200
-        except Exception as e:
-            logger.warning(f"Direct IP connection failed: {str(e)}")
-
-            # Fallback to hostname
-            try:
-                response = session.get(
-                    f"https://{api_host}/api/v1/teams", timeout=timeout, verify=True
-                )
-                logger.info(f"Hostname connection successful: {response.status_code}")
-                return response.status_code == 200
-            except Exception as e:
-                logger.error(f"All connection attempts failed: {str(e)}")
-                return False
+        response = session.get(url, timeout=timeout)
+        status_code = response.status_code
+        logger.info(f"NHL API connection test result: {status_code}")
+        return status_code == 200
 
     except Exception as e:
         logger.error(f"NHL API connection test failed: {str(e)}")
@@ -240,7 +186,8 @@ def save_rankings(df, filename):
             "goal_differential",
             "points_percentage",
             "powerplay_percentage",
-            "penalty_kill_percentage",
+            "penalty_kill_percentage",  # Make sure PK% is included
+            "last_10_record",
             "score",
         ]
 
@@ -253,15 +200,19 @@ def save_rankings(df, filename):
                 output_df[col] = 0  # Default value for missing columns
 
         # Round specific columns
-        output_df["powerplay_percentage"] = output_df["powerplay_percentage"].round(1)
-        output_df["penalty_kill_percentage"] = output_df[
-            "penalty_kill_percentage"
-        ].round(1)
-        output_df["points_percentage"] = output_df["points_percentage"].round(3)
-        output_df["score"] = output_df["score"].round(2)
+        numeric_columns = {
+            "powerplay_percentage": 1,
+            "penalty_kill_percentage": 1,  # Make sure PK% is rounded
+            "points_percentage": 1,
+            "score": 1,
+        }
+
+        for col, decimals in numeric_columns.items():
+            if col in output_df.columns:
+                output_df[col] = output_df[col].round(decimals)
 
         # Ensure all numeric columns are float or int
-        numeric_columns = columns[1:]  # All columns except 'team'
+        numeric_columns = [c for c in columns if c not in ["team", "last_10_record"]]
         for col in numeric_columns:
             output_df[col] = pd.to_numeric(output_df[col], errors="coerce").fillna(0)
 
@@ -272,6 +223,16 @@ def save_rankings(df, filename):
         output_df.to_csv(
             filename, index=False, sep=",", encoding="utf-8", quoting=csv.QUOTE_MINIMAL
         )
+
+        # Ensure PK percentage is included and properly formatted
+        if "penalty_kill_percentage" not in df.columns:
+            df["penalty_kill_percentage"] = 0.0
+        df["penalty_kill_percentage"] = df["penalty_kill_percentage"].round(1)
+
+        # Log PK percentages for verification
+        logger.info("PK Percentages:")
+        for _, row in df.iterrows():
+            logger.info(f"{row['team']}: {row['penalty_kill_percentage']:.1f}%")
 
         # Verify the save
         test_df = pd.read_csv(filename)
@@ -288,16 +249,12 @@ def save_rankings(df, filename):
 
 
 def update_rankings():
-    """Update rankings data with simplified sequential processing"""
+    """Update rankings data with last 10 games focus"""
     try:
         logging.info("Starting rankings update...")
         stats_fetcher = NHLStatsFetcher()
         calculator = RankingsCalculator()
         processor = GameProcessor()
-
-        # Get current date for rankings
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=14)
 
         rankings_data = []
 
@@ -305,21 +262,25 @@ def update_rankings():
         for team in TEAM_CODES:
             try:
                 logging.info(f"Processing team: {team}")
-                # Get team stats
-                team_stats = stats_fetcher.get_team_stats(team, end_date)
+                team_stats = stats_fetcher.get_team_stats(team, datetime.now())
                 if not team_stats:
                     logging.error(f"Failed to get team stats for {team}")
                     continue
 
-                # Get schedule
-                schedule = stats_fetcher.get_schedule(team, start_date, end_date)
+                # Get recent games (fetch more than 10 to ensure we have enough completed games)
+                schedule = stats_fetcher.get_schedule_by_games(team, 15)
                 if not schedule:
                     logging.warning(f"No schedule found for {team}")
                     continue
 
-                # Process games
+                # Process last 10 completed games
                 game_stats = []
+                completed_games = 0
+
                 for game in schedule:
+                    if completed_games >= 10:
+                        break
+
                     game_id = game.get("id")
                     if not game_id:
                         continue
@@ -327,8 +288,9 @@ def update_rankings():
                     details = stats_fetcher.get_game_details(game_id)
                     if details:
                         stats = processor.process_game(details, team)
-                        if stats:
+                        if stats and stats["goals_for"] + stats["goals_against"] > 0:
                             game_stats.append(stats)
+                            completed_games += 1
 
                 if not game_stats:
                     logging.warning(f"No valid game stats found for {team}")
@@ -358,13 +320,20 @@ def update_rankings():
                     else 0
                 )
 
-                # Aggregate other stats
-                aggregated_stats = {
-                    "total_points": sum(g.get("total_points", 0) for g in game_stats),
+                # Get wins/losses/otl for last 10 record
+                wins = sum(1 for g in game_stats if g.get("wins", 0) > 0)
+                losses = sum(1 for g in game_stats if g.get("losses", 0) > 0)
+                otl = sum(1 for g in game_stats if g.get("otl", 0) > 0)
+                last_10_record = f"{wins}-{losses}-{otl}"
+
+                # Aggregate stats
+                team_data = {
+                    "team": team,
+                    "points": sum(g.get("total_points", 0) for g in game_stats),
                     "games_played": len(game_stats),
-                    "wins": sum(g.get("wins", 0) for g in game_stats),
-                    "losses": sum(g.get("losses", 0) for g in game_stats),
-                    "otl": sum(g.get("otl", 0) for g in game_stats),
+                    "wins": wins,
+                    "losses": losses,
+                    "otl": otl,
                     "goals_for": sum(g.get("goals_for", 0) for g in game_stats),
                     "goals_against": sum(g.get("goals_against", 0) for g in game_stats),
                     "shots_on_goal": sum(g.get("shots_on_goal", 0) for g in game_stats),
@@ -375,25 +344,34 @@ def update_rankings():
                     "times_shorthanded": total_times_shorthanded,
                     "powerplay_percentage": pp_percentage,
                     "penalty_kill_percentage": pk_percentage,
-                    "road_wins": sum(g.get("road_wins", 0) for g in game_stats),
-                    "scoring_first": sum(g.get("scoring_first", 0) for g in game_stats),
-                    "comeback_wins": sum(g.get("comeback_wins", 0) for g in game_stats),
-                    "one_goal_games": sum(
-                        g.get("one_goal_games", 0) for g in game_stats
-                    ),
-                    "last_10_results": [g.get("last_10", 0) for g in game_stats][-10:],
+                    "last_10_record": last_10_record,
                 }
 
-                # Calculate team ranking
-                team_ranking = calculator.calculate_team_score(
-                    aggregated_stats, team_stats, team
-                )
-                if team_ranking:
-                    team_ranking["powerplay_percentage"] = pp_percentage
-                    team_ranking["penalty_kill_percentage"] = pk_percentage
-                    rankings_data.append(team_ranking)
+                # Calculate additional metrics
+                games_played = len(game_stats)
+                if games_played > 0:
+                    team_data["goal_differential"] = (
+                        team_data["goals_for"] - team_data["goals_against"]
+                    )
+                    team_data["points_percentage"] = (
+                        team_data["points"] / (games_played * 2)
+                    ) * 100
+
+                    # Calculate score based on various factors
+                    score = (
+                        (team_data["points_percentage"] * 0.4)
+                        + (team_data["powerplay_percentage"] * 0.15)
+                        + (team_data["penalty_kill_percentage"] * 0.15)
+                        + ((team_data["goals_for"] / games_played) * 5)
+                        - ((team_data["goals_against"] / games_played) * 5)
+                    )
+                    team_data["score"] = max(score, 0)  # Ensure score isn't negative
+
+                    rankings_data.append(team_data)
                     logging.info(f"Successfully processed rankings for {team}")
-                    logging.info(f"PP%: {pp_percentage:.1f}, PK%: {pk_percentage:.1f}")
+                    logging.info(
+                        f"Last 10: {last_10_record}, PP%: {pp_percentage:.1f}, PK%: {pk_percentage:.1f}"
+                    )
 
             except Exception as e:
                 logging.error(f"Error processing team {team}: {str(e)}")
@@ -404,14 +382,6 @@ def update_rankings():
             df = pd.DataFrame(rankings_data)
             now = datetime.now()
             filename = f'nhl_power_rankings_{now.strftime("%Y%m%d")}.csv'
-
-            # Log verification data
-            logging.info("Special teams stats for verification:")
-            for team_data in rankings_data:
-                logging.info(
-                    f"{team_data['team']}: PP% = {team_data['powerplay_percentage']:.1f}, "
-                    f"PK% = {team_data['penalty_kill_percentage']:.1f}"
-                )
 
             if save_rankings(df, filename):
                 logging.info(
@@ -723,25 +693,8 @@ def create_app():
                 "NHL API connection test failed - application may have limited functionality"
             )
 
-        # Initialize scheduler with parallel update function
-        scheduler = BackgroundScheduler(
-            executors={"default": {"type": "threadpool", "max_workers": 4}}
-        )
-        scheduler.add_job(
-            func=update_rankings,
-            trigger="interval",
-            minutes=Config.UPDATE_INTERVAL_MINUTES,
-            max_instances=1,
-            id="rankings_update",
-        )
-        scheduler.start()
-        flask_app.config["scheduler_running"] = True
-        flask_app.scheduler = scheduler
-        logger.info(
-            f"Scheduler started - updating every {Config.UPDATE_INTERVAL_MINUTES} minutes"
-        )
-
         # Register routes
+
         @flask_app.route("/")
         def home():
             logger.info("Processing home page request")
@@ -753,12 +706,23 @@ def create_app():
                 files = [
                     f for f in os.listdir(".") if f.startswith("nhl_power_rankings_")
                 ]
+
+                # If no rankings exist, generate initial rankings
                 if not files:
-                    logger.warning("No rankings files found - initiating generation")
-                    return render_template(
-                        "error.html",
-                        error="Generating initial rankings... Please refresh in a few moments.",
+                    logger.warning(
+                        "No rankings files found - generating initial rankings"
                     )
+                    df = update_rankings()
+                    if df is None:
+                        return render_template(
+                            "error.html",
+                            error="Failed to generate initial rankings. Please try again.",
+                        )
+                    files = [
+                        f
+                        for f in os.listdir(".")
+                        if f.startswith("nhl_power_rankings_")
+                    ]
 
                 latest_file = max(files)
                 logger.info(f"Found latest rankings file: {latest_file}")
@@ -772,33 +736,64 @@ def create_app():
                         os.remove(latest_file)
                         return render_template(
                             "error.html",
-                            error="Rankings data corrupted. Regenerating...",
+                            error="Rankings data corrupted. Please refresh.",
                         )
 
                 except Exception as e:
                     logger.error(f"Error reading {latest_file}: {str(e)}")
                     os.remove(latest_file)
                     return render_template(
-                        "error.html", error="Rankings data corrupted. Regenerating..."
+                        "error.html", error="Rankings data corrupted. Please refresh."
                     )
 
                 if df.empty:
                     logger.warning("Rankings DataFrame is empty")
                     return render_template(
                         "error.html",
-                        error="No rankings data available yet. Please try again later.",
+                        error="No rankings data available. Please refresh.",
                     )
+
+                # Define column order
+                column_order = OrderedDict(
+                    [
+                        ("rank", "Rank"),
+                        ("team", "Team"),
+                        ("score", "Score"),
+                        ("last_10_record", "Last 10"),
+                        ("games_played", "GP"),
+                        ("points", "Points"),
+                        ("goals_for", "GF"),
+                        ("goals_against", "GA"),
+                        ("goal_differential", "DIFF"),
+                        ("powerplay_percentage", "PP%"),
+                        ("penalty_kill_percentage", "PK%"),
+                        ("points_percentage", "Points%"),
+                    ]
+                )
 
                 # Process the DataFrame
                 df.columns = df.columns.str.lower()
                 df = df.sort_values("score", ascending=False).reset_index(drop=True)
+                df["rank"] = df.index + 1
                 df["logo"] = df["team"].map(TEAM_LOGOS)
 
-                # Round values
-                df["powerplay_percentage"] = df["powerplay_percentage"].round(1)
-                df["penalty_kill_percentage"] = df["penalty_kill_percentage"].round(1)
-                df["points_percentage"] = df["points_percentage"].round(3)
-                df["score"] = df["score"].round(2)
+                # Round numeric values
+                numeric_columns = {
+                    "powerplay_percentage": 1,
+                    "penalty_kill_percentage": 1,
+                    "points_percentage": 1,
+                    "score": 1,
+                }
+
+                for col, decimals in numeric_columns.items():
+                    if col in df.columns:
+                        df[col] = df[col].round(decimals)
+
+                # Reorder columns based on column_order
+                available_columns = [
+                    col for col in column_order.keys() if col in df.columns
+                ]
+                df = df[available_columns + ["logo"]]  # Keep logo at the end
 
                 last_update = datetime.fromtimestamp(os.path.getmtime(latest_file))
                 logger.info(
@@ -809,6 +804,11 @@ def create_app():
                     "rankings.html",
                     rankings=df.to_dict("records"),
                     last_update=last_update.strftime("%Y-%m-%d %H:%M:%S"),
+                    columns=[
+                        (k, v)
+                        for k, v in column_order.items()
+                        if k in available_columns
+                    ],
                 )
             except Exception as e:
                 logger.error(f"Error rendering homepage: {str(e)}", exc_info=True)
@@ -816,13 +816,12 @@ def create_app():
                     "error.html", error=f"Error loading rankings: {str(e)}"
                 )
 
-        pass
-
         @flask_app.route("/refresh_rankings", methods=["POST"])
         def refresh_rankings():
+            """Handle manual rankings refresh requests"""
             logger.info("Manual rankings refresh requested")
             try:
-                df = update_rankings_parallel()
+                df = update_rankings()
 
                 if df is None:
                     logger.error("Failed to update rankings - no data returned")
@@ -830,14 +829,24 @@ def create_app():
 
                 logger.info(f"Successfully updated rankings for {len(df)} teams")
 
-                # Round the values
-                df["powerplay_percentage"] = df["powerplay_percentage"].round(1)
-                df["penalty_kill_percentage"] = df["penalty_kill_percentage"].round(1)
-                df["points_percentage"] = df["points_percentage"].round(3)
-                df["score"] = df["score"].round(2)
-
-                df = df.sort_values("score", ascending=False).reset_index(drop=True)
+                # Process DataFrame for response
+                df = df.copy()  # Create a copy to avoid SettingWithCopyWarning
                 df["logo"] = df["team"].map(TEAM_LOGOS)
+
+                # Round numeric values
+                numeric_columns = {
+                    "powerplay_percentage": 1,
+                    "penalty_kill_percentage": 1,
+                    "points_percentage": 1,
+                    "score": 1,
+                }
+
+                for col, decimals in numeric_columns.items():
+                    if col in df.columns:
+                        df[col] = df[col].round(decimals)
+
+                # Sort by score
+                df = df.sort_values("score", ascending=False).reset_index(drop=True)
 
                 rankings_data = df.to_dict("records")
                 last_update = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -855,46 +864,43 @@ def create_app():
 
         @flask_app.route("/health")
         def health_check():
-            """Simplified health check that won't timeout"""
+            """Simplified health check"""
             try:
                 status_checks = {
                     "status": "available",
                     "timestamp": datetime.now().isoformat(),
                     "process_id": os.getpid(),
                     "memory_usage": f"{psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024:.1f}MB",
+                    "rankings_files": len(
+                        [
+                            f
+                            for f in os.listdir(".")
+                            if f.startswith("nhl_power_rankings_")
+                        ]
+                    ),
                 }
-
-                # Check if we can write to filesystem
-                test_file = "health_check_test.txt"
-                with open(test_file, "w") as f:
-                    f.write("test")
-                    os.remove(test_file)
-                    status_checks["filesystem"] = "writable"
-
-                # Check for rankings files
-                rankings_files = [
-                    f for f in os.listdir(".") if f.startswith("nhl_power_rankings_")
-                ]
-                status_checks["rankings_files"] = len(rankings_files)
-
                 return jsonify(status_checks), 200
             except Exception as e:
-                error_status = {
-                    "status": "error",
-                    "error": str(e),
-                    "timestamp": datetime.now().isoformat(),
-                }
-                return jsonify(error_status), 500
-            pass
+                return jsonify(
+                    {
+                        "status": "error",
+                        "error": str(e),
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                ), 500
 
-        # Perform initial rankings update
-        logger.info("Performing initial rankings update...")
-        clean_rankings_files()
-        initial_rankings = update_rankings()
-        if initial_rankings is not None:
-            logger.info("Initial rankings generated successfully")
-        else:
-            logger.warning("Initial rankings generation failed")
+        # Generate initial rankings if needed
+        logger.info("Checking for existing rankings...")
+        files = [f for f in os.listdir(".") if f.startswith("nhl_power_rankings_")]
+        if not files:
+            logger.info("No rankings found - generating initial rankings...")
+            clean_rankings_files()
+            initial_rankings = update_rankings()
+            if initial_rankings is not None:
+                logger.info("Initial rankings generated successfully")
+            else:
+                logger.warning("Initial rankings generation failed")
+
         return flask_app
     except Exception as e:
         logger.error(f"Error creating Flask app: {str(e)}", exc_info=True)

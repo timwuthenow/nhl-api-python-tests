@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 from apscheduler.schedulers.background import BackgroundScheduler
 import pandas as pd
 import logging
@@ -21,6 +21,7 @@ from functools import partial
 from nhl_rankings_calculator import RankingsCalculator
 from nhl_game_processor import GameProcessor
 from nhl_stats_fetcher import NHLStatsFetcher
+from improved_rankings_calculator import get_improved_rankings
 
 logger = logging.getLogger(__name__)
 
@@ -381,7 +382,7 @@ def update_rankings():
         if rankings_data:
             df = pd.DataFrame(rankings_data)
             now = datetime.now()
-            filename = f'nhl_power_rankings_{now.strftime("%Y%m%d")}.csv'
+            filename = f"nhl_power_rankings_{now.strftime('%Y%m%d')}.csv"
 
             if save_rankings(df, filename):
                 logging.info(
@@ -485,189 +486,6 @@ def log_memory_usage():
     logger.info(f"Memory usage: {mem_info.rss / 1024 / 1024:.2f} MB")
 
 
-# # Create a lock for the update process
-# update_lock = Lock()
-
-
-# def update_rankings_parallel():
-#     """Railway-optimized parallel rankings update with incremental CSV writing"""
-#     if not update_lock.acquire(blocking=False):
-#         logger.warning("Rankings update already in progress, skipping")
-#         return None
-
-#     try:
-#         logger.info("Starting parallel rankings update...")
-#         stats_fetcher = NHLStatsFetcher()
-#         calculator = RankingsCalculator()
-#         processor = GameProcessor()
-
-#         end_date = datetime.now()
-#         start_date = end_date - timedelta(days=14)
-
-#         # Initialize CSV file early
-#         now = datetime.now()
-#         filename = f'nhl_power_rankings_{now.strftime("%Y%m%d")}.csv'
-#         temp_filename = f"temp_{filename}"
-
-#         # Write headers
-#         headers = [
-#             "team",
-#             "points",
-#             "games_played",
-#             "goals_for",
-#             "goals_against",
-#             "goal_differential",
-#             "points_percentage",
-#             "powerplay_percentage",
-#             "penalty_kill_percentage",
-#             "score",
-#         ]
-
-#         # Ensure any existing temp file is removed
-#         if os.path.exists(temp_filename):
-#             os.remove(temp_filename)
-
-#         with open(temp_filename, "w", newline="") as f:
-#             writer = csv.DictWriter(f, fieldnames=headers)
-#             writer.writeheader()
-
-#         # Process teams in very small batches to control memory usage
-#         BATCH_SIZE = 2  # Reduced batch size for Railway
-#         processed_count = 0
-#         total_teams = len(TEAM_CODES)
-#         failed_teams = []
-
-#         for i in range(0, total_teams, BATCH_SIZE):
-#             batch = TEAM_CODES[i : i + BATCH_SIZE]
-#             logger.info(
-#                 f"Processing batch of teams: {batch} ({i+1}-{min(i+BATCH_SIZE, total_teams)} of {total_teams})"
-#             )
-#             batch_rankings = []
-
-#             # Process batch with limited threads
-#             with ThreadPoolExecutor(max_workers=2) as executor:
-#                 process_func = partial(
-#                     process_team_rankings,
-#                     start_date=start_date,
-#                     end_date=end_date,
-#                     stats_fetcher=stats_fetcher,
-#                     calculator=calculator,
-#                     processor=processor,
-#                 )
-
-#                 future_to_team = {
-#                     executor.submit(process_func, team): team for team in batch
-#                 }
-
-#                 for future in as_completed(future_to_team):
-#                     team = future_to_team[future]
-#                     try:
-#                         team_ranking = future.result()
-#                         if team_ranking:
-#                             # Validate and round values
-#                             team_ranking["powerplay_percentage"] = round(
-#                                 float(team_ranking.get("powerplay_percentage", 0)), 1
-#                             )
-#                             team_ranking["penalty_kill_percentage"] = round(
-#                                 float(team_ranking.get("penalty_kill_percentage", 0)), 1
-#                             )
-#                             team_ranking["points_percentage"] = round(
-#                                 float(team_ranking.get("points_percentage", 0)), 3
-#                             )
-#                             team_ranking["score"] = round(
-#                                 float(team_ranking.get("score", 0)), 2
-#                             )
-
-#                             # Validate required fields
-#                             if all(key in team_ranking for key in headers):
-#                                 batch_rankings.append(team_ranking)
-#                                 processed_count += 1
-#                                 logger.info(
-#                                     f"Successfully processed rankings for {team}"
-#                                 )
-#                             else:
-#                                 logger.error(f"Missing required fields for {team}")
-#                                 failed_teams.append(team)
-#                     except Exception as e:
-#                         logger.error(f"Error processing {team}: {str(e)}")
-#                         failed_teams.append(team)
-
-#             # Write batch to CSV
-#             if batch_rankings:
-#                 try:
-#                     with open(temp_filename, "a", newline="") as f:
-#                         writer = csv.DictWriter(f, fieldnames=headers)
-#                         for ranking in batch_rankings:
-#                             writer.writerow(ranking)
-
-#                     logger.info(
-#                         f"Wrote batch of {len(batch_rankings)} teams to temporary CSV"
-#                     )
-#                 except Exception as e:
-#                     logger.error(f"Error writing to CSV: {str(e)}")
-
-#             # Clear memory after each batch
-#             batch_rankings = []
-#             processor.clear_cache()
-#             gc.collect()
-
-#             # Log memory usage
-#             process = psutil.Process(os.getpid())
-#             memory_mb = process.memory_info().rss / 1024 / 1024
-#             logger.info(f"Memory usage after batch: {memory_mb:.1f} MB")
-
-#         # If we processed any teams, finalize the CSV
-#         if processed_count > 0:
-#             try:
-#                 # Read the temp CSV and sort by score
-#                 df = pd.read_csv(temp_filename)
-
-#                 # Validate data
-#                 if len(df) != processed_count:
-#                     logger.warning(
-#                         f"Mismatch in processed teams: CSV has {len(df)}, expected {processed_count}"
-#                     )
-
-#                 # Sort by score and write final file
-#                 df = df.sort_values("score", ascending=False)
-#                 df.to_csv(filename, index=False)
-
-#                 # Clean up temp file
-#                 if os.path.exists(temp_filename):
-#                     os.remove(temp_filename)
-
-#                 logger.info(
-#                     f"Successfully created final rankings for {processed_count} teams"
-#                 )
-
-#                 if failed_teams:
-#                     logger.warning(
-#                         f"Failed to process teams: {', '.join(failed_teams)}"
-#                     )
-
-#                 return df
-#             except Exception as e:
-#                 logger.error(f"Error finalizing CSV: {str(e)}")
-#                 if os.path.exists(temp_filename):
-#                     os.remove(temp_filename)
-#                 return None
-#         else:
-#             logger.error("No rankings data generated")
-#             if os.path.exists(temp_filename):
-#                 os.remove(temp_filename)
-#             return None
-
-#     except Exception as e:
-#         logger.error(f"Error in parallel rankings update: {str(e)}")
-#         logger.error("Exception details:", exc_info=True)
-#         if "temp_filename" in locals() and os.path.exists(temp_filename):
-#             os.remove(temp_filename)
-#         return None
-#     finally:
-#         update_lock.release()
-#         logger.info("Rankings update lock released")
-
-
 def get_memory_usage():
     """Get current memory usage"""
 
@@ -697,7 +515,174 @@ def create_app():
 
         @flask_app.route("/")
         def home():
-            logger.info("Processing home page request")
+            """
+            Display improved rankings page as the home page
+            Original rankings are now accessed via /original-rankings
+            """
+            logger.info("Processing home page request (improved rankings)")
+            try:
+                # Clean up any corrupted files first
+                clean_rankings_files()
+
+                # Get latest rankings file
+                files = [
+                    f for f in os.listdir(".") if f.startswith("nhl_power_rankings_")
+                ]
+
+                # If no rankings exist, generate initial rankings
+                if not files:
+                    logger.warning(
+                        "No rankings files found - generating initial rankings"
+                    )
+                    df = update_rankings()
+                    if df is None:
+                        return render_template(
+                            "error.html",
+                            error="Failed to generate initial rankings. Please try again.",
+                        )
+                    files = [
+                        f
+                        for f in os.listdir(".")
+                        if f.startswith("nhl_power_rankings_")
+                    ]
+
+                latest_file = max(files)
+                logger.info(f"Found latest rankings file: {latest_file}")
+
+                try:
+                    # Generate improved rankings
+                    improved_df = get_improved_rankings(latest_file)
+
+                    if improved_df.empty:
+                        logger.error("Failed to generate improved rankings")
+                        return render_template(
+                            "error.html",
+                            error="Failed to generate improved rankings. Please try again.",
+                        )
+
+                    # Get original rankings for comparison
+                    original_df = pd.read_csv(latest_file)
+
+                    # Prepare data for display
+                    original_df = original_df.sort_values(
+                        "score", ascending=False
+                    ).reset_index(drop=True)
+                    original_df["rank"] = original_df.index + 1
+                    original_df["logo"] = original_df["team"].map(TEAM_LOGOS)
+
+                    # Prepare improved rankings
+                    improved_df["logo"] = improved_df["team"].map(TEAM_LOGOS)
+
+                    # Calculate changes
+                    comparison_data = []
+                    for _, row in improved_df.iterrows():
+                        team = row["team"]
+
+                        # Find team in original rankings
+                        if team in original_df["team"].values:
+                            original_rank = original_df.loc[
+                                original_df["team"] == team, "rank"
+                            ].values[0]
+                            original_score = original_df.loc[
+                                original_df["team"] == team, "score"
+                            ].values[0]
+
+                            new_rank = row["rank"]
+                            rank_change = original_rank - new_rank
+
+                            comparison_data.append(
+                                {
+                                    "team": team,
+                                    "logo": row["logo"],
+                                    "original_rank": original_rank,
+                                    "new_rank": new_rank,
+                                    "rank_change": rank_change,
+                                    "original_score": original_score,
+                                    "new_score": row["improved_score"],
+                                    "score_change": row["improved_score"]
+                                    - original_score,
+                                }
+                            )
+                        else:
+                            logger.warning(
+                                f"Team {team} not found in original rankings"
+                            )
+
+                    comparison_df = pd.DataFrame(comparison_data)
+
+                    last_update = datetime.now()
+
+                    # Define column order for display
+                    column_order = OrderedDict(
+                        [
+                            ("rank", "Rank"),
+                            ("team", "Team"),
+                            ("improved_score", "Score"),
+                            ("last_10_record", "Last 10"),
+                            ("games_played", "GP"),
+                            ("points", "Points"),
+                            ("goals_for", "GF"),
+                            ("goals_against", "GA"),
+                            ("goal_differential", "DIFF"),
+                            ("powerplay_percentage", "PP%"),
+                            ("penalty_kill_percentage", "PK%"),
+                            ("points_percentage", "Points%"),
+                        ]
+                    )
+
+                    # Process the DataFrame for display
+                    available_columns = [
+                        col for col in column_order.keys() if col in improved_df.columns
+                    ]
+
+                    # Ensure "improved_score" is included in the columns
+                    if (
+                        "improved_score" in improved_df.columns
+                        and "improved_score" not in available_columns
+                    ):
+                        available_columns.append("improved_score")
+
+                    display_df = improved_df[
+                        available_columns + ["logo"]
+                    ]  # Keep logo at the end
+
+                    # Rename "improved_score" to "score" for display purposes
+                    display_df = display_df.rename(columns={"improved_score": "score"})
+
+                    logger.info(
+                        "Successfully prepared improved rankings data for display"
+                    )
+
+                    return render_template(
+                        "improved_rankings.html",
+                        rankings=display_df.to_dict("records"),
+                        comparison=comparison_df.to_dict("records"),
+                        last_update=last_update.strftime("%Y-%m-%d %H:%M:%S"),
+                        columns=[
+                            (k, v)
+                            for k, v in column_order.items()
+                            if k in available_columns
+                        ],
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Error processing rankings file: {str(e)}", exc_info=True
+                    )
+                    return render_template(
+                        "error.html", error=f"Error processing rankings: {str(e)}"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"Error rendering improved rankings page: {str(e)}", exc_info=True
+                )
+                return render_template(
+                    "error.html", error=f"Error loading improved rankings: {str(e)}"
+                )
+
+        @flask_app.route("/original-rankings")
+        def original_rankings():
+            """Display original rankings page (formerly the home page)"""
+            logger.info("Processing original rankings page request")
             try:
                 # Clean up any corrupted files first
                 clean_rankings_files()
@@ -862,6 +847,138 @@ def create_app():
                 logger.error(f"Error refreshing rankings: {str(e)}", exc_info=True)
                 return {"success": False, "error": str(e)}, 500
 
+        @flask_app.route("/refresh_improved_rankings", methods=["POST"])
+        def refresh_improved_rankings():
+            """Handle manual improved rankings refresh requests"""
+            logger.info("Manual improved rankings refresh requested")
+            try:
+                # First refresh the base rankings
+                df = update_rankings()
+
+                if df is None:
+                    logger.error("Failed to update rankings - no data returned")
+                    return {"success": False, "error": "Failed to update rankings"}, 500
+
+                logger.info(f"Successfully updated base rankings for {len(df)} teams")
+
+                # Get the latest file
+                files = [
+                    f for f in os.listdir(".") if f.startswith("nhl_power_rankings_")
+                ]
+                if not files:
+                    return {"success": False, "error": "No rankings files found"}, 500
+
+                latest_file = max(files)
+
+                # Generate improved rankings
+                improved_df = get_improved_rankings(latest_file)
+
+                if improved_df.empty:
+                    return {
+                        "success": False,
+                        "error": "Failed to generate improved rankings",
+                    }, 500
+
+                logger.info(
+                    f"Successfully generated improved rankings for {len(improved_df)} teams"
+                )
+
+                # Add logos
+                improved_df["logo"] = improved_df["team"].map(TEAM_LOGOS)
+
+                # Calculate changes
+                original_df = pd.read_csv(latest_file)
+                original_df = original_df.sort_values(
+                    "score", ascending=False
+                ).reset_index(drop=True)
+                original_df["rank"] = original_df.index + 1
+
+                comparison_data = []
+                for _, row in improved_df.iterrows():
+                    team = row["team"]
+
+                    if team in original_df["team"].values:
+                        original_rank = original_df.loc[
+                            original_df["team"] == team, "rank"
+                        ].values[0]
+                        original_score = original_df.loc[
+                            original_df["team"] == team, "score"
+                        ].values[0]
+
+                        new_rank = row["rank"]
+                        rank_change = original_rank - new_rank
+
+                        comparison_data.append(
+                            {
+                                "team": team,
+                                "logo": row["logo"],
+                                "original_rank": original_rank,
+                                "new_rank": new_rank,
+                                "rank_change": rank_change,
+                                "original_score": original_score,
+                                "new_score": row["improved_score"],
+                                "score_change": row["improved_score"] - original_score,
+                            }
+                        )
+
+                comparison_df = pd.DataFrame(comparison_data)
+
+                # Format for response
+                improved_df = improved_df.rename(columns={"improved_score": "score"})
+
+                last_update = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                logger.info("Improved rankings refresh completed successfully")
+                return {
+                    "success": True,
+                    "rankings": improved_df.to_dict("records"),
+                    "comparison": comparison_df.to_dict("records"),
+                    "last_update": last_update,
+                }
+
+            except Exception as e:
+                logger.error(
+                    f"Error refreshing improved rankings: {str(e)}", exc_info=True
+                )
+                return {"success": False, "error": str(e)}, 500
+
+        @flask_app.route("/api/improved_rankings", methods=["GET"])
+        def api_improved_rankings():
+            """API endpoint for improved rankings."""
+            try:
+                # Get latest rankings file
+                files = [
+                    f for f in os.listdir(".") if f.startswith("nhl_power_rankings_")
+                ]
+
+                if not files:
+                    return jsonify({"error": "No rankings files found"}), 404
+
+                latest_file = max(files)
+
+                # Generate improved rankings
+                improved_df = get_improved_rankings(latest_file)
+
+                if improved_df.empty:
+                    return jsonify(
+                        {"error": "Failed to generate improved rankings"}
+                    ), 500
+
+                # Format for API response
+                improved_df["logo"] = improved_df["team"].map(TEAM_LOGOS)
+
+                # Return as JSON
+                return jsonify(
+                    {
+                        "rankings": improved_df.to_dict("records"),
+                        "timestamp": datetime.now().isoformat(),
+                        "source_file": latest_file,
+                    }
+                )
+            except Exception as e:
+                logger.error(f"API error: {str(e)}", exc_info=True)
+                return jsonify({"error": str(e)}), 500
+
         @flask_app.route("/health")
         def health_check():
             """Simplified health check"""
@@ -919,7 +1036,7 @@ if __name__ == "__main__":
             raise RuntimeError("Application factory returned None")
 
         # Get port from environment with fallback
-        port = int(os.environ.get("PORT", 5000))
+        port = int(os.environ.get("PORT", 5002))  # Changed default port to 5002
 
         logger.info(f"Starting Flask app on port {port}")
         app.run(host="0.0.0.0", port=port)

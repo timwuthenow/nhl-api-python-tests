@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+  <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+    <h1 class="text-3xl font-bold">NHL Power Rankings</h1>
+    <div class="flex items-center gap-4">
+      <button
+        onclick="refreshImprovedRankings()"
+        class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition duration-200"
+      >
+        <svg
+          id="refreshIcon"
+          class="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+          ></path>
+        </svg>
+        <span>Refresh Rankings</span>
+      </button>
+      <a href="/original-rankings" class="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded text-white">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+        </svg>
+        <span>Original Rankings</span>
+      </a>
+      <span id="lastUpdate" class="text-sm text-gray-400">Last updated: {{ last_update }}</span>
+    </div>
+  </div>
+
+  <div id="errorAlert" class="hidden mb-4 p-4 border rounded-md bg-red-100 text-red-700"></div>
+
+  <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+    <h2 class="text-xl font-bold mb-4">About Power Rankings</h2>
+    <p class="mb-4">This improved power rankings algorithm blends recent team performance with season-long metrics and special teams effectiveness for a more comprehensive view of team strength.</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      <div class="border p-4 rounded-md bg-blue-50">
+        <h3 class="font-bold">Recent Performance (45%)</h3>
+        <p class="text-sm">Existing scoring system that focuses on the last 10 games, which captures current team momentum.</p>
+      </div>
+
+      <div class="border p-4 rounded-md bg-green-50">
+        <h3 class="font-bold">Season Performance (30%)</h3>
+        <p class="text-sm">Incorporates season-long points percentage and goal differential from the NHL standings.</p>
+      </div>
+
+      <div class="border p-4 rounded-md bg-purple-50">
+        <h3 class="font-bold">Special Teams (25%)</h3>
+        <p class="text-sm">Combines power play percentage and penalty kill percentage to measure special teams effectiveness.</p>
+      </div>
+    </div>
+
+    <div class="bg-yellow-50 p-4 rounded-md">
+      <h3 class="font-bold">Winning Streak Bonus</h3>
+      <p class="text-sm">Teams on winning streaks of 3+ games receive a scoring bonus, with longer streaks getting progressively larger bonuses.</p>
+    </div>
+  </div>
+
+  <!-- Improved Rankings Table -->
+  <div class="overflow-x-auto mb-10">
+    <h2 class="text-2xl font-bold mb-4">Current Rankings</h2>
+    <table class="w-full border-collapse">
+      <thead class="sticky-header">
+        <tr>
+          <th class="p-2 border border-gray-700 text-left bg-gray-800 sortable text-white" data-column="rank">Rank</th>
+          <th class="p-2 border border-gray-700 text-left bg-gray-800 sortable text-white" data-column="team">Team</th>
+          <th class="p-2 border border-gray-700 text-right bg-gray-800 sortable text-white" data-column="score">Score</th>
+          {% for col, name in columns %}
+            {% if col not in ['rank', 'team', 'score'] %}
+            <th class="p-2 border border-gray-700 text-center bg-gray-800 sortable text-white" data-column="{{ col }}">{{ name }}</th>
+            {% endif %}
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody id="rankings-body">
+        {% for team in rankings %}
+        <tr class="hover:bg-gray-200 text-gray-800 bg-white">
+          <td class="p-2 border border-gray-300">{{ team.rank }}</td>
+          <td class="p-2 border border-gray-300">
+            <div class="flex items-center">
+              <img src="{{ team.logo }}" alt="{{ team.team }}" class="h-8 w-8 mr-2">
+              {{ team.team }}
+            </div>
+          </td>
+          <td class="p-2 border border-gray-300 text-right font-bold">{{ "%.1f"|format(team.score) }}</td>
+          {% for col, name in columns %}
+            {% if col not in ['rank', 'team', 'score'] %}
+              {% if col in ['powerplay_percentage', 'penalty_kill_percentage', 'points_percentage'] %}
+              <td class="p-2 border border-gray-300 text-center">{{ "%.1f"|format(team[col]) }}%</td>
+              {% else %}
+              <td class="p-2 border border-gray-300 text-center">{{ team[col] }}</td>
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Ranking Change Analysis -->
+  <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+    <h2 class="text-xl font-bold mb-4">Ranking Changes</h2>
+    <div class="overflow-x-auto">
+      <table class="w-full border-collapse">
+        <thead>
+          <tr class="bg-gray-100">
+            <th class="p-2 border text-left">Team</th>
+            <th class="p-2 border text-right">Original Rank</th>
+            <th class="p-2 border text-right">New Rank</th>
+            <th class="p-2 border text-right">Change</th>
+            <th class="p-2 border text-right">Original Score</th>
+            <th class="p-2 border text-right">New Score</th>
+            <th class="p-2 border text-right">Score Change</th>
+          </tr>
+        </thead>
+        <tbody id="comparison-body">
+          {% for team in comparison|sort(attribute='rank_change', reverse=true) %}
+          <tr class="hover:bg-gray-50 {% if team.rank_change > 0 %}bg-green-50{% elif team.rank_change < 0 %}bg-red-50{% endif %}">
+            <td class="p-2 border">
+              <div class="flex items-center">
+                <img src="{{ team.logo }}" alt="{{ team.team }}" class="h-6 w-6 mr-2">
+                {{ team.team }}
+              </div>
+            </td>
+            <td class="p-2 border text-right">{{ team.original_rank }}</td>
+            <td class="p-2 border text-right">{{ team.new_rank }}</td>
+            <td class="p-2 border text-right font-bold {% if team.rank_change > 0 %}text-green-600{% elif team.rank_change < 0 %}text-red-600{% endif %}">
+              {% if team.rank_change > 0 %}+{% endif %}{{ team.rank_change }}
+            </td>
+            <td class="p-2 border text-right">{{ "%.1f"|format(team.original_score) }}</td>
+            <td class="p-2 border text-right">{{ "%.1f"|format(team.new_score) }}</td>
+            <td class="p-2 border text-right font-bold {% if team.score_change > 0 %}text-green-600{% elif team.score_change < 0 %}text-red-600{% endif %}">
+              {% if team.score_change > 0 %}+{% endif %}{{ "%.1f"|format(team.score_change) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    function refreshImprovedRankings() {
+      const refreshIcon = document.getElementById("refreshIcon");
+      const errorAlert = document.getElementById("errorAlert");
+      const lastUpdate = document.getElementById("lastUpdate");
+
+      refreshIcon.classList.add("animate-spin");
+      errorAlert.classList.add("hidden");
+
+      fetch("/refresh_improved_rankings", {
+        method: "POST",
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.success) {
+            // Update rankings table
+            updateRankingsTable(data.rankings);
+
+            // Update comparison table
+            updateComparisonTable(data.comparison);
+
+            // Update last updated time
+            lastUpdate.textContent = "Last updated: " + data.last_update;
+          } else {
+            errorAlert.textContent = data.error || "Failed to refresh rankings";
+            errorAlert.classList.remove("hidden");
+          }
+        })
+        .catch((error) => {
+          errorAlert.textContent = "Error refreshing rankings: " + error;
+          errorAlert.classList.remove("hidden");
+        })
+        .finally(() => {
+          refreshIcon.classList.remove("animate-spin");
+        });
+    }
+
+    function updateRankingsTable(rankings) {
+      const tbody = document.getElementById("rankings-body");
+      tbody.innerHTML = "";
+
+      rankings.forEach((team) => {
+        const row = document.createElement("tr");
+        row.className = "hover:bg-gray-200 text-gray-800 bg-white";
+
+        // Create rank cell
+        const rankCell = document.createElement("td");
+        rankCell.className = "p-2 border border-gray-300";
+        rankCell.textContent = team.rank;
+        row.appendChild(rankCell);
+
+        // Create team cell with logo
+        const teamCell = document.createElement("td");
+        teamCell.className = "p-2 border border-gray-300";
+        teamCell.innerHTML = `
+          <div class="flex items-center">
+            <img src="${team.logo}" alt="${team.team}" class="h-8 w-8 mr-2">
+            ${team.team}
+          </div>
+        `;
+        row.appendChild(teamCell);
+
+        // Create score cell
+        const scoreCell = document.createElement("td");
+        scoreCell.className = "p-2 border border-gray-300 text-right font-bold";
+        scoreCell.textContent = parseFloat(team.score).toFixed(1);
+        row.appendChild(scoreCell);
+
+        // Create other cells based on available columns
+        {% for col, name in columns %}
+          {% if col not in ['rank', 'team', 'score'] %}
+            const {{ col }}Cell = document.createElement("td");
+            {{ col }}Cell.className = "p-2 border border-gray-300 text-center";
+            {% if col in ['powerplay_percentage', 'penalty_kill_percentage', 'points_percentage'] %}
+            {{ col }}Cell.textContent = parseFloat(team.{{ col }}).toFixed(1) + "%";
+            {% else %}
+            {{ col }}Cell.textContent = team.{{ col }};
+            {% endif %}
+            row.appendChild({{ col }}Cell);
+          {% endif %}
+        {% endfor %}
+
+        tbody.appendChild(row);
+      });
+    }
+
+    function updateComparisonTable(comparison) {
+      const tbody = document.getElementById("comparison-body");
+      tbody.innerHTML = "";
+
+      // Sort by rank change (descending)
+      comparison.sort((a, b) => b.rank_change - a.rank_change);
+
+      comparison.forEach((team) => {
+        const row = document.createElement("tr");
+        row.className = `hover:bg-gray-50 ${team.rank_change > 0 ? 'bg-green-50' : team.rank_change < 0 ? 'bg-red-50' : ''}`;
+
+        // Create team cell with logo
+        const teamCell = document.createElement("td");
+        teamCell.className = "p-2 border";
+        teamCell.innerHTML = `
+          <div class="flex items-center">
+            <img src="${team.logo}" alt="${team.team}" class="h-6 w-6 mr-2">
+            ${team.team}
+          </div>
+        `;
+        row.appendChild(teamCell);
+
+        // Create original rank cell
+        const originalRankCell = document.createElement("td");
+        originalRankCell.className = "p-2 border text-right";
+        originalRankCell.textContent = team.original_rank;
+        row.appendChild(originalRankCell);
+
+        // Create new rank cell
+        const newRankCell = document.createElement("td");
+        newRankCell.className = "p-2 border text-right";
+        newRankCell.textContent = team.new_rank;
+        row.appendChild(newRankCell);
+
+        // Create rank change cell
+        const rankChangeCell = document.createElement("td");
+        rankChangeCell.className = `p-2 border text-right font-bold ${team.rank_change > 0 ? 'text-green-600' : team.rank_change < 0 ? 'text-red-600' : ''}`;
+        rankChangeCell.textContent = team.rank_change > 0 ? '+' + team.rank_change : team.rank_change;
+        row.appendChild(rankChangeCell);
+
+        // Create original score cell
+        const originalScoreCell = document.createElement("td");
+        originalScoreCell.className = "p-2 border text-right";
+        originalScoreCell.textContent = parseFloat(team.original_score).toFixed(1);
+        row.appendChild(originalScoreCell);
+
+        // Create new score cell
+        const newScoreCell = document.createElement("td");
+        newScoreCell.className = "p-2 border text-right";
+        newScoreCell.textContent = parseFloat(team.new_score).toFixed(1);
+        row.appendChild(newScoreCell);
+
+        // Create score change cell
+        const scoreChangeCell = document.createElement("td");
+        scoreChangeCell.className = `p-2 border text-right font-bold ${team.score_change > 0 ? 'text-green-600' : team.score_change < 0 ? 'text-red-600' : ''}`;
+        scoreChangeCell.textContent = team.score_change > 0 ? '+' + parseFloat(team.score_change).toFixed(1) : parseFloat(team.score_change).toFixed(1);
+        row.appendChild(scoreChangeCell);
+
+        tbody.appendChild(row);
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      const sortables = document.querySelectorAll('.sortable');
+
+      sortables.forEach(th => {
+        th.addEventListener('click', function() {
+          const table = this.closest('table');
+          const tbody = table.querySelector('tbody');
+          const rows = Array.from(tbody.querySelectorAll('tr'));
+          const index = Array.from(this.parentNode.children).indexOf(this);
+          const currentDirection = this.getAttribute('data-sort') === 'asc' ? 'desc' : 'asc';
+
+          // Clear all sort directions
+          sortables.forEach(el => {
+            el.setAttribute('data-sort', '');
+            el.classList.remove('sorted-asc', 'sorted-desc');
+          });
+
+          // Set current sort direction
+          this.setAttribute('data-sort', currentDirection);
+          this.classList.add(`sorted-${currentDirection}`);
+
+          // Sort rows
+          rows.sort((a, b) => {
+            const cellA = a.children[index].textContent.trim();
+            const cellB = b.children[index].textContent.trim();
+
+            // Check if numeric
+            if (!isNaN(parseFloat(cellA)) && !isNaN(parseFloat(cellB))) {
+              const numA = parseFloat(cellA.replace('%', ''));
+              const numB = parseFloat(cellB.replace('%', ''));
+              return currentDirection === 'asc' ? numA - numB : numB - numA;
+            }
+
+            // Text comparison
+            return currentDirection === 'asc'
+              ? cellA.localeCompare(cellB)
+              : cellB.localeCompare(cellA);
+          });
+
+          // Reorder rows
+          rows.forEach(row => tbody.appendChild(row));
+        });
+      });
+    });
+  </script>
+</div>
+{% endblock %}

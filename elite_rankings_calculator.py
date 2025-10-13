@@ -464,10 +464,18 @@ class UltimateRankingsCalculator:
         if games_played == 0:
             return {'pdo': 100.0, 'luck_score': 50.0}
         
-        # Estimate shooting and save percentages
-        # Rough estimates - in real system would use actual shot data
-        estimated_shots_for = goals_for * 8  # ~8 shots per goal league average
-        estimated_shots_against = goals_against * 8
+        # Estimate shooting and save percentages based on team performance
+        # Vary shot rates based on offensive/defensive efficiency
+        goal_rate_for = goals_for / games_played if games_played > 0 else 2.5
+        goal_rate_against = goals_against / games_played if games_played > 0 else 2.5
+        
+        # Better teams generate more shots, worse teams allow more shots
+        # Base shots per game: ~30, adjust based on goal scoring
+        shots_per_game_for = 28 + (goal_rate_for - 2.5) * 4  # 24-36 range
+        shots_per_game_against = 32 - (goal_rate_against - 2.5) * 3  # 26-38 range
+        
+        estimated_shots_for = shots_per_game_for * games_played
+        estimated_shots_against = shots_per_game_against * games_played
         
         shooting_pct = (goals_for / max(1, estimated_shots_for)) * 100 if estimated_shots_for > 0 else 10.0
         save_pct = 100 - ((goals_against / max(1, estimated_shots_against)) * 100) if estimated_shots_against > 0 else 90.0

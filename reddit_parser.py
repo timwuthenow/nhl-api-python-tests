@@ -255,10 +255,10 @@ class RedditPowerRankingsParser:
             change_class = "no-change"
             
             if row['delta'] > 0:
-                change_indicator = f"↑{row['delta']}"
+                change_indicator = f"⬆️{row['delta']}"
                 change_class = "rank-up"
             elif row['delta'] < 0:
-                change_indicator = f"↓{abs(row['delta'])}"
+                change_indicator = f"⬇️{abs(row['delta'])}"
                 change_class = "rank-down"
             else:
                 change_indicator = "—"
@@ -276,4 +276,36 @@ class RedditPowerRankingsParser:
                 'team_color': self.team_colors.get(row['team_abbrev'], "#FFB81C")
             })
         
-        return display_data
+        # Calculate biggest movers
+        biggest_riser = None
+        biggest_faller = None
+        
+        for team in display_data:
+            # Extract delta from the data
+            delta = 0
+            for _, row in df.iterrows():
+                if row['team_abbrev'] == team['team_abbrev']:
+                    delta = row['delta']
+                    break
+            
+            # Check for biggest riser (most positive delta)
+            if delta > 0:
+                if biggest_riser is None or delta > biggest_riser['delta']:
+                    biggest_riser = {
+                        'team': team,
+                        'delta': delta
+                    }
+            
+            # Check for biggest faller (most negative delta)
+            if delta < 0:
+                if biggest_faller is None or delta < biggest_faller['delta']:
+                    biggest_faller = {
+                        'team': team,
+                        'delta': abs(delta)
+                    }
+        
+        return {
+            'teams': display_data,
+            'biggest_riser': biggest_riser,
+            'biggest_faller': biggest_faller
+        }

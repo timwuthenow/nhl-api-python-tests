@@ -945,7 +945,10 @@ def create_app():
                     )
                 
                 # Format for display
-                rankings_data = parser.format_for_display(df)
+                rankings_result = parser.format_for_display(df)
+                rankings_data = rankings_result['teams']
+                biggest_riser = rankings_result['biggest_riser']
+                biggest_faller = rankings_result['biggest_faller']
                 
                 # Extract week info
                 week_start = df.iloc[0]['week_start'] if not df.empty else None
@@ -972,6 +975,8 @@ def create_app():
                 return render_template(
                     "reddit_rankings.html",
                     rankings=rankings_data,
+                    biggest_riser=biggest_riser,
+                    biggest_faller=biggest_faller,
                     week_start=week_start,
                     week_end=week_end,
                     input_text=markdown_text,
@@ -1006,7 +1011,10 @@ def create_app():
                     return jsonify({"error": "Could not parse rankings data"}), 400
                 
                 # Format for display
-                rankings_data = parser.format_for_display(df)
+                rankings_result = parser.format_for_display(df)
+                rankings_data = rankings_result['teams']
+                biggest_riser = rankings_result['biggest_riser']
+                biggest_faller = rankings_result['biggest_faller']
                 
                 # Extract week info
                 week_start = df.iloc[0]['week_start'] if not df.empty else None
@@ -1030,6 +1038,8 @@ def create_app():
                 html_content = render_template(
                     "reddit_rankings.html",
                     rankings=rankings_data,
+                    biggest_riser=biggest_riser,
+                    biggest_faller=biggest_faller,
                     week_start=week_start,
                     week_end=week_end,
                     custom_title=custom_title,

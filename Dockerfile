@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Install system dependencies for Playwright
+# Install system dependencies for Playwright and build tools
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -8,6 +8,9 @@ RUN apt-get update && apt-get install -y \
     procps \
     xvfb \
     fonts-liberation \
+    gcc \
+    python3-dev \
+    build-essential \
     libasound2 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \

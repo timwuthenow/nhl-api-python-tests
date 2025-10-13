@@ -25,6 +25,7 @@ from nhl_rankings_calculator import RankingsCalculator
 from nhl_game_processor import GameProcessor
 from nhl_stats_fetcher import NHLStatsFetcher
 from elite_rankings_calculator import get_ultimate_rankings
+from database_manager import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -833,33 +834,22 @@ def create_app():
             """Display elite rankings page"""
             logger.info("Processing elite rankings page request")
             try:
-                # Get latest rankings file
-                files = [
-                    f for f in os.listdir(".") if f.startswith("nhl_power_rankings_")
-                    and "improved" not in f and "elite" not in f
-                ]
-
-                if not files:
-                    logger.warning("No basic rankings files found")
-                    return render_template(
-                        "error.html", error="No rankings data available"
-                    )
-
-                latest_file = max(files)
-                logger.info(f"Using rankings file: {latest_file}")
-
-                # Read ultimate rankings CSV directly
-                ultimate_files = [f for f in os.listdir(".") if f.startswith("nhl_power_rankings_ultimate_")]
-                if ultimate_files:
-                    ultimate_file = max(ultimate_files)
-                    logger.info(f"Reading ultimate rankings from: {ultimate_file}")
-                    elite_df = pd.read_csv(ultimate_file)
-                    # Ensure proper sorting
-                    elite_df = elite_df.sort_values("ultimate_score", ascending=False).reset_index(drop=True)
-                    elite_df["ultimate_rank"] = elite_df.index + 1
+                # Try to get rankings from database first
+                db_manager = DatabaseManager()
+                elite_df = db_manager.get_latest_rankings("ultimate")
+                
+                if elite_df.empty:
+                    logger.info("No rankings in database, generating new ones...")
+                    # Generate new rankings
+                    elite_df = get_ultimate_rankings()
+                    
+                    if elite_df.empty:
+                        logger.error("Failed to generate new rankings")
+                        return render_template(
+                            "error.html", error="Failed to generate rankings"
+                        )
                 else:
-                    # Fallback: Generate elite rankings
-                    elite_df = get_ultimate_rankings(latest_file)
+                    logger.info("Retrieved rankings from database")
 
                 if elite_df.empty:
                     logger.error("Failed to get ultimate rankings")
@@ -885,6 +875,43 @@ def create_app():
                 return render_template(
                     "error.html", error=f"Error loading elite rankings: {str(e)}"
                 )
+
+        @flask_app.route("/refresh_ultimate_rankings", methods=["POST"])
+        def refresh_ultimate_rankings():
+            """Refresh ultimate rankings by regenerating from latest data."""
+            logger.info("Manual ultimate rankings refresh requested")
+            try:
+                # Generate fresh rankings
+                elite_df = get_ultimate_rankings()
+                
+                if elite_df.empty:
+                    logger.error("Failed to generate ultimate rankings")
+                    return {"success": False, "error": "Failed to generate ultimate rankings"}, 500
+                
+                logger.info(f"Successfully refreshed ultimate rankings for {len(elite_df)} teams")
+                
+                # Add logos
+                elite_df["logo"] = elite_df["team"].map(TEAM_LOGOS)
+                
+                # Format for response
+                rankings_data = elite_df.to_dict("records")
+                
+                # Get database metadata
+                db_manager = DatabaseManager()
+                metadata = db_manager.get_rankings_metadata("ultimate")
+                last_update = metadata["last_updated"] if metadata else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                logger.info("Ultimate rankings refresh completed successfully")
+                return {
+                    "success": True,
+                    "rankings": rankings_data,
+                    "last_update": last_update,
+                    "total_teams": len(rankings_data)
+                }
+                
+            except Exception as e:
+                logger.error(f"Error refreshing ultimate rankings: {str(e)}", exc_info=True)
+                return {"success": False, "error": str(e)}, 500
 
         @flask_app.route("/api/elite_rankings", methods=["GET"])
         def api_elite_rankings():

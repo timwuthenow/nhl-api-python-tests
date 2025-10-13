@@ -19,6 +19,7 @@ import re
 from season_config import SEASON_START_DATE, get_ranking_date_range, GAME_TYPE_REGULAR
 from last_10_fetcher import Last10Fetcher
 from nhl_stats_fetcher import NHLStatsFetcher
+from database_manager import DatabaseManager
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -771,11 +772,17 @@ def get_ultimate_rankings(basic_rankings_file=None):
         ultimate_df = ultimate_df.sort_values("ultimate_score", ascending=False).reset_index(drop=True)
         ultimate_df["ultimate_rank"] = ultimate_df.index + 1
 
-        # Save to file
-        now = datetime.now()
-        output_file = f"nhl_power_rankings_ultimate_{now.strftime('%Y%m%d')}.csv"
-        ultimate_df.to_csv(output_file, index=False)
-        logger.info(f"Saved ultimate rankings to {output_file}")
+        # Save to database
+        db_manager = DatabaseManager()
+        success = db_manager.save_rankings(ultimate_df, "ultimate")
+        if success:
+            logger.info("Saved ultimate rankings to database")
+            # Also export to CSV for backup
+            output_file = db_manager.export_to_csv("ultimate")
+            if output_file:
+                logger.info(f"Exported backup CSV to {output_file}")
+        else:
+            logger.error("Failed to save ultimate rankings to database")
 
         # Show top 10 teams
         logger.info("Top 10 teams in ULTIMATE rankings:")

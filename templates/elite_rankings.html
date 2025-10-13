@@ -13,6 +13,12 @@
         </svg>
         Back to Basic Rankings
       </a>
+      <button onclick="refreshRankings()" class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+        </svg>
+        Refresh Rankings
+      </button>
     </div>
   </div>
 
@@ -223,6 +229,43 @@ function toggleDetails(detailsId) {
     detailsRow.classList.add('hidden');
     arrow.style.transform = 'rotate(0deg)';
   }
+}
+
+function refreshRankings() {
+  const button = event.target.closest('button');
+  const originalText = button.innerHTML;
+  
+  // Show loading state
+  button.innerHTML = `
+    <svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+    </svg>
+    Refreshing...
+  `;
+  button.disabled = true;
+  
+  fetch('/refresh_ultimate_rankings', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    }
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      // Refresh the page to show new data
+      window.location.reload();
+    } else {
+      alert('Failed to refresh rankings: ' + data.error);
+      button.innerHTML = originalText;
+      button.disabled = false;
+    }
+  })
+  .catch(error => {
+    alert('Error refreshing rankings: ' + error);
+    button.innerHTML = originalText;
+    button.disabled = false;
+  });
 }
 </script>
 {% endblock %}

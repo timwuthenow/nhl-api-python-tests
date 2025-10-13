@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, redirect
 from apscheduler.schedulers.background import BackgroundScheduler
 import pandas as pd
 import logging
@@ -12,6 +12,9 @@ import gc
 from collections import OrderedDict
 from threading import Lock
 from config import Config
+from season_config import SEASON_START_DATE, get_ranking_date_range
+from week_config import get_current_week_period, filter_games_by_week
+from last_10_fetcher import Last10Fetcher
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
@@ -21,7 +24,7 @@ from functools import partial
 from nhl_rankings_calculator import RankingsCalculator
 from nhl_game_processor import GameProcessor
 from nhl_stats_fetcher import NHLStatsFetcher
-from improved_rankings_calculator import get_improved_rankings
+from elite_rankings_calculator import get_ultimate_rankings
 
 logger = logging.getLogger(__name__)
 
@@ -250,12 +253,16 @@ def save_rankings(df, filename):
 
 
 def update_rankings():
-    """Update rankings data with last 10 games focus"""
+    """Update rankings data using each team's last 10 regular season games"""
     try:
-        logging.info("Starting rankings update...")
+        # Get current week period for display purposes
+        week_start, week_end = get_current_week_period()
+        logging.info(f"Starting rankings update using last 10 games (week {week_start} to {week_end} for reference)...")
+        
         stats_fetcher = NHLStatsFetcher()
         calculator = RankingsCalculator()
         processor = GameProcessor()
+        last_10_fetcher = Last10Fetcher()
 
         rankings_data = []
 
@@ -268,18 +275,21 @@ def update_rankings():
                     logging.error(f"Failed to get team stats for {team}")
                     continue
 
-                # Get recent games (fetch more than 10 to ensure we have enough completed games)
-                schedule = stats_fetcher.get_schedule_by_games(team, 15)
+                # Get team's actual last 10 regular season games
+                schedule = last_10_fetcher.get_team_last_10_games(team)
                 if not schedule:
-                    logging.warning(f"No schedule found for {team}")
+                    logging.warning(f"No last 10 games found for {team}")
                     continue
 
-                # Process last 10 completed games
+                # Process all last 10 games
                 game_stats = []
                 completed_games = 0
+                
+                logging.info(f"Processing {len(schedule)} last 10 games for {team}")
 
                 for game in schedule:
-                    if completed_games >= 10:
+                    # Process all last 10 games
+                    if completed_games >= len(schedule):
                         break
 
                     game_id = game.get("id")
@@ -515,169 +525,8 @@ def create_app():
 
         @flask_app.route("/")
         def home():
-            """
-            Display improved rankings page as the home page
-            Original rankings are now accessed via /original-rankings
-            """
-            logger.info("Processing home page request (improved rankings)")
-            try:
-                # Clean up any corrupted files first
-                clean_rankings_files()
-
-                # Get latest rankings file
-                files = [
-                    f for f in os.listdir(".") if f.startswith("nhl_power_rankings_")
-                ]
-
-                # If no rankings exist, generate initial rankings
-                if not files:
-                    logger.warning(
-                        "No rankings files found - generating initial rankings"
-                    )
-                    df = update_rankings()
-                    if df is None:
-                        return render_template(
-                            "error.html",
-                            error="Failed to generate initial rankings. Please try again.",
-                        )
-                    files = [
-                        f
-                        for f in os.listdir(".")
-                        if f.startswith("nhl_power_rankings_")
-                    ]
-
-                latest_file = max(files)
-                logger.info(f"Found latest rankings file: {latest_file}")
-
-                try:
-                    # Generate improved rankings
-                    improved_df = get_improved_rankings(latest_file)
-
-                    if improved_df.empty:
-                        logger.error("Failed to generate improved rankings")
-                        return render_template(
-                            "error.html",
-                            error="Failed to generate improved rankings. Please try again.",
-                        )
-
-                    # Get original rankings for comparison
-                    original_df = pd.read_csv(latest_file)
-
-                    # Prepare data for display
-                    original_df = original_df.sort_values(
-                        "score", ascending=False
-                    ).reset_index(drop=True)
-                    original_df["rank"] = original_df.index + 1
-                    original_df["logo"] = original_df["team"].map(TEAM_LOGOS)
-
-                    # Prepare improved rankings
-                    improved_df["logo"] = improved_df["team"].map(TEAM_LOGOS)
-
-                    # Calculate changes
-                    comparison_data = []
-                    for _, row in improved_df.iterrows():
-                        team = row["team"]
-
-                        # Find team in original rankings
-                        if team in original_df["team"].values:
-                            original_rank = original_df.loc[
-                                original_df["team"] == team, "rank"
-                            ].values[0]
-                            original_score = original_df.loc[
-                                original_df["team"] == team, "score"
-                            ].values[0]
-
-                            new_rank = row["rank"]
-                            rank_change = original_rank - new_rank
-
-                            comparison_data.append(
-                                {
-                                    "team": team,
-                                    "logo": row["logo"],
-                                    "original_rank": original_rank,
-                                    "new_rank": new_rank,
-                                    "rank_change": rank_change,
-                                    "original_score": original_score,
-                                    "new_score": row["improved_score"],
-                                    "score_change": row["improved_score"]
-                                    - original_score,
-                                }
-                            )
-                        else:
-                            logger.warning(
-                                f"Team {team} not found in original rankings"
-                            )
-
-                    comparison_df = pd.DataFrame(comparison_data)
-
-                    last_update = datetime.now()
-
-                    # Define column order for display
-                    column_order = OrderedDict(
-                        [
-                            ("rank", "Rank"),
-                            ("team", "Team"),
-                            ("improved_score", "Score"),
-                            ("last_10_record", "Last 10"),
-                            ("games_played", "GP"),
-                            ("points", "Points"),
-                            ("goals_for", "GF"),
-                            ("goals_against", "GA"),
-                            ("goal_differential", "DIFF"),
-                            ("powerplay_percentage", "PP%"),
-                            ("penalty_kill_percentage", "PK%"),
-                            ("points_percentage", "Points%"),
-                        ]
-                    )
-
-                    # Process the DataFrame for display
-                    available_columns = [
-                        col for col in column_order.keys() if col in improved_df.columns
-                    ]
-
-                    # Ensure "improved_score" is included in the columns
-                    if (
-                        "improved_score" in improved_df.columns
-                        and "improved_score" not in available_columns
-                    ):
-                        available_columns.append("improved_score")
-
-                    display_df = improved_df[
-                        available_columns + ["logo"]
-                    ]  # Keep logo at the end
-
-                    # Rename "improved_score" to "score" for display purposes
-                    display_df = display_df.rename(columns={"improved_score": "score"})
-
-                    logger.info(
-                        "Successfully prepared improved rankings data for display"
-                    )
-
-                    return render_template(
-                        "improved_rankings.html",
-                        rankings=display_df.to_dict("records"),
-                        comparison=comparison_df.to_dict("records"),
-                        last_update=last_update.strftime("%Y-%m-%d %H:%M:%S"),
-                        columns=[
-                            (k, v)
-                            for k, v in column_order.items()
-                            if k in available_columns
-                        ],
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Error processing rankings file: {str(e)}", exc_info=True
-                    )
-                    return render_template(
-                        "error.html", error=f"Error processing rankings: {str(e)}"
-                    )
-            except Exception as e:
-                logger.error(
-                    f"Error rendering improved rankings page: {str(e)}", exc_info=True
-                )
-                return render_template(
-                    "error.html", error=f"Error loading improved rankings: {str(e)}"
-                )
+            """Redirect to ultimate rankings page"""
+            return redirect("/elite-rankings")
 
         @flask_app.route("/original-rankings")
         def original_rankings():
@@ -971,6 +820,111 @@ def create_app():
                 return jsonify(
                     {
                         "rankings": improved_df.to_dict("records"),
+                        "timestamp": datetime.now().isoformat(),
+                        "source_file": latest_file,
+                    }
+                )
+            except Exception as e:
+                logger.error(f"API error: {str(e)}", exc_info=True)
+                return jsonify({"error": str(e)}), 500
+
+        @flask_app.route("/elite-rankings")
+        def elite_rankings():
+            """Display elite rankings page"""
+            logger.info("Processing elite rankings page request")
+            try:
+                # Get latest rankings file
+                files = [
+                    f for f in os.listdir(".") if f.startswith("nhl_power_rankings_")
+                    and "improved" not in f and "elite" not in f
+                ]
+
+                if not files:
+                    logger.warning("No basic rankings files found")
+                    return render_template(
+                        "error.html", error="No rankings data available"
+                    )
+
+                latest_file = max(files)
+                logger.info(f"Using rankings file: {latest_file}")
+
+                # Read ultimate rankings CSV directly
+                ultimate_files = [f for f in os.listdir(".") if f.startswith("nhl_power_rankings_ultimate_")]
+                if ultimate_files:
+                    ultimate_file = max(ultimate_files)
+                    logger.info(f"Reading ultimate rankings from: {ultimate_file}")
+                    elite_df = pd.read_csv(ultimate_file)
+                    # Ensure proper sorting
+                    elite_df = elite_df.sort_values("ultimate_score", ascending=False).reset_index(drop=True)
+                    elite_df["ultimate_rank"] = elite_df.index + 1
+                else:
+                    # Fallback: Generate elite rankings
+                    elite_df = get_ultimate_rankings(latest_file)
+
+                if elite_df.empty:
+                    logger.error("Failed to get ultimate rankings")
+                    return render_template(
+                        "error.html", error="Failed to get ultimate rankings"
+                    )
+
+                # Add team logos
+                elite_df["logo"] = elite_df["team"].map(TEAM_LOGOS)
+
+                # Convert to records for template
+                rankings_data = elite_df.to_dict("records")
+
+                return render_template(
+                    "elite_rankings.html",
+                    rankings=rankings_data,
+                    last_update=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    total_teams=len(rankings_data),
+                )
+
+            except Exception as e:
+                logger.error(f"Error rendering elite rankings page: {str(e)}", exc_info=True)
+                return render_template(
+                    "error.html", error=f"Error loading elite rankings: {str(e)}"
+                )
+
+        @flask_app.route("/api/elite_rankings", methods=["GET"])
+        def api_elite_rankings():
+            """API endpoint for elite rankings."""
+            try:
+                # Get latest rankings file
+                files = [
+                    f for f in os.listdir(".") if f.startswith("nhl_power_rankings_")
+                    and "improved" not in f and "elite" not in f
+                ]
+
+                if not files:
+                    return jsonify({"error": "No rankings files found"}), 404
+
+                latest_file = max(files)
+
+                # Read ultimate rankings CSV directly
+                ultimate_files = [f for f in os.listdir(".") if f.startswith("nhl_power_rankings_ultimate_")]
+                if ultimate_files:
+                    ultimate_file = max(ultimate_files)
+                    elite_df = pd.read_csv(ultimate_file)
+                    # Ensure proper sorting
+                    elite_df = elite_df.sort_values("ultimate_score", ascending=False).reset_index(drop=True)
+                    elite_df["ultimate_rank"] = elite_df.index + 1
+                else:
+                    # Fallback: Generate elite rankings
+                    elite_df = get_ultimate_rankings(latest_file)
+
+                if elite_df.empty:
+                    return jsonify(
+                        {"error": "Failed to get ultimate rankings"}
+                    ), 500
+
+                # Format for API response
+                elite_df["logo"] = elite_df["team"].map(TEAM_LOGOS)
+
+                # Return as JSON
+                return jsonify(
+                    {
+                        "rankings": elite_df.to_dict("records"),
                         "timestamp": datetime.now().isoformat(),
                         "source_file": latest_file,
                     }

@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+  <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+    <div>
+      <h1 class="text-3xl font-bold">Ultimate NHL Power Rankings</h1>
+      <p class="text-gray-600 mt-1">Comprehensive analytics with 14 advanced metrics including xG, Corsi, and PDO</p>
+    </div>
+    <div class="flex items-center gap-4">
+      <a href="/" class="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded text-white">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+        </svg>
+        Back to Basic Rankings
+      </a>
+    </div>
+  </div>
+
+  <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
+    <div class="flex">
+      <div class="flex-shrink-0">
+        <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+        </svg>
+      </div>
+      <div class="ml-3">
+        <h3 class="text-sm font-medium text-blue-800">Ultimate Ranking Methodology</h3>
+        <div class="mt-2 text-sm text-blue-700">
+          <p>These rankings incorporate 14 advanced metrics including Expected Goals (xG), Corsi, Fenwick, PDO, goal scoring dominance, clutch performance, and comprehensive strength of schedule analysis.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+    <div class="bg-white rounded-lg shadow p-4">
+      <div class="text-sm font-medium text-gray-500">Total Teams</div>
+      <div class="text-2xl font-bold text-gray-900">{{ total_teams }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4">
+      <div class="text-sm font-medium text-gray-500">Last Updated</div>
+      <div class="text-lg font-semibold text-gray-900">{{ last_update }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4">
+      <div class="text-sm font-medium text-gray-500">Algorithm Version</div>
+      <div class="text-lg font-semibold text-gray-900">the-what-now-gorithm v1</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4">
+      <div class="text-sm font-medium text-gray-500">Factors Considered</div>
+      <div class="text-lg font-semibold text-gray-900">14 Metrics</div>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Team</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ultimate Score</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Record</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Points %</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Goal Diff</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SoS Grade</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SoS Difficulty</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Details</th>
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+          {% for team in rankings %}
+          <tr class="hover:bg-gray-50 cursor-pointer" onclick="toggleDetails('details-{{ loop.index }}')">
+            <td class="px-6 py-4 whitespace-nowrap">
+              <div class="flex items-center">
+                <span class="inline-flex items-center justify-center w-8 h-8 rounded-full 
+                  {% if team.ultimate_rank <= 5 %}bg-green-100 text-green-800
+                  {% elif team.ultimate_rank <= 15 %}bg-yellow-100 text-yellow-800
+                  {% else %}bg-red-100 text-red-800{% endif %} 
+                  text-sm font-medium">
+                  {{ team.ultimate_rank }}
+                </span>
+              </div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <div class="flex items-center">
+                <img class="h-8 w-8 rounded-full mr-3" src="{{ team.logo }}" alt="{{ team.team }} logo">
+                <div class="text-sm font-medium text-gray-900">{{ team.team }}</div>
+              </div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <div class="text-sm font-bold text-gray-900">{{ "%.1f"|format(team.ultimate_score) }}</div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+              {{ team.last_10_record }}
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <div class="text-sm text-gray-900">{{ "%.1f"|format(team.points_percentage) }}%</div>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full 
+                {% if team.goal_differential > 0 %}bg-green-100 text-green-800
+                {% elif team.goal_differential < 0 %}bg-red-100 text-red-800
+                {% else %}bg-gray-100 text-gray-800{% endif %}">
+                {% if team.goal_differential > 0 %}+{% endif %}{{ team.goal_differential }}
+              </span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full
+                {% if 'A+' in team.sos_grade %}bg-red-100 text-red-800
+                {% elif 'A' in team.sos_grade %}bg-orange-100 text-orange-800
+                {% elif 'B' in team.sos_grade %}bg-yellow-100 text-yellow-800
+                {% elif 'C' in team.sos_grade %}bg-blue-100 text-blue-800
+                {% else %}bg-green-100 text-green-800{% endif %}">
+                {{ team.sos_grade }}
+              </span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+              {{ "%.3f"|format(team.schedule_difficulty) }}
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+              <svg class="w-5 h-5 transform transition-transform duration-200" id="arrow-{{ loop.index }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </td>
+          </tr>
+          <tr id="details-{{ loop.index }}" class="hidden">
+            <td colspan="8" class="px-6 py-4 bg-gray-50">
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                <div class="bg-white p-4 rounded-lg shadow-sm">
+                  <h4 class="font-semibold text-gray-900 mb-2">Advanced Analytics</h4>
+                  <div class="space-y-1 text-gray-600">
+                    <div>Expected Goals: <span class="font-medium">{{ "%.2f"|format(team.expected_goals if team.expected_goals is defined else 0) }}</span></div>
+                    <div>Corsi For %: <span class="font-medium">{{ "%.1f"|format(team.corsi_for_pct if team.corsi_for_pct is defined else 0) }}%</span></div>
+                    <div>Fenwick For %: <span class="font-medium">{{ "%.1f"|format(team.fenwick_for_pct if team.fenwick_for_pct is defined else 0) }}%</span></div>
+                    <div>PDO: <span class="font-medium">{{ "%.1f"|format(team.pdo if team.pdo is defined else 100) }}</span></div>
+                  </div>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow-sm">
+                  <h4 class="font-semibold text-gray-900 mb-2">Performance Metrics</h4>
+                  <div class="space-y-1 text-gray-600">
+                    <div>Goals For: <span class="font-medium">{{ team.goals_for }}</span></div>
+                    <div>Goals Against: <span class="font-medium">{{ team.goals_against }}</span></div>
+                    <div>Power Play %: <span class="font-medium">{{ "%.1f"|format(team.powerplay_percentage) }}%</span></div>
+                    <div>Penalty Kill %: <span class="font-medium">{{ "%.1f"|format(team.penalty_kill_percentage) }}%</span></div>
+                  </div>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow-sm">
+                  <h4 class="font-semibold text-gray-900 mb-2">Context & Quality</h4>
+                  <div class="space-y-1 text-gray-600">
+                    <div>Win Quality: <span class="font-medium">{{ "%.2f"|format(team.win_quality if team.win_quality is defined else 0) }}</span></div>
+                    <div>Goal Dominance: <span class="font-medium">{{ "%.2f"|format(team.goal_dominance if team.goal_dominance is defined else 0) }}</span></div>
+                    <div>Clutch Performance: <span class="font-medium">{{ "%.2f"|format(team.clutch_performance if team.clutch_performance is defined else 0) }}</span></div>
+                    <div>Momentum: <span class="font-medium">{{ "%.2f"|format(team.momentum if team.momentum is defined else 0) }}</span></div>
+                    <div class="mt-2 pt-2 border-t border-gray-200">
+                      <div class="font-medium text-gray-900 text-xs mb-1">Last 10 Games:</div>
+                      <div class="text-xs text-gray-600 break-words">{{ team.last_10_results if team.last_10_results is defined else "No games available" }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="mt-8 bg-gray-50 rounded-lg p-6">
+    <h3 class="text-lg font-semibold text-gray-900 mb-4">Ultimate Ranking Methodology</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div>
+        <h4 class="font-medium text-gray-900 mb-2">Advanced Analytics (35%)</h4>
+        <ul class="text-sm text-gray-600 space-y-1">
+          <li>• Expected Goals (xG) Metrics (12%) - Shot quality & danger</li>
+          <li>• Corsi/Fenwick (10%) - Shot attempt control</li>
+          <li>• PDO & Luck Factor (8%) - Shooting/save % sustainability</li>
+          <li>• Shot Quality Analysis (5%) - High-danger chances</li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="font-medium text-gray-900 mb-2">Core Performance (30%)</h4>
+        <ul class="text-sm text-gray-600 space-y-1">
+          <li>• Season Points % (15%) - Overall season performance</li>
+          <li>• Goal Differential (8%) - Scoring efficiency</li>
+          <li>• Goal Scoring Dominance (4%) - Margin of victory</li>
+          <li>• Special Teams (3%) - Power play & penalty kill</li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="font-medium text-gray-900 mb-2">Context & Schedule (35%)</h4>
+        <ul class="text-sm text-gray-600 space-y-1">
+          <li>• Strength of Schedule (15%) - Opponent quality weighting</li>
+          <li>• Recent Record (10%) - Last 10 games performance</li>
+          <li>• Clutch Performance (5%) - One-goal game success</li>
+          <li>• Win Quality (3%) - Quality of victories</li>
+          <li>• Recent Form (2%) - Momentum trends</li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="font-medium text-gray-900 mb-2">Strength of Schedule Grades</h4>
+        <ul class="text-sm text-gray-600 space-y-1">
+          <li>• <span class="font-medium text-red-600">A+</span> - Brutal (0.65+)</li>
+          <li>• <span class="font-medium text-orange-600">A</span> - Tough (0.60-0.64)</li>
+          <li>• <span class="font-medium text-yellow-600">B</span> - Average (0.50-0.59)</li>
+          <li>• <span class="font-medium text-blue-600">C</span> - Easy (0.40-0.49)</li>
+          <li>• <span class="font-medium text-green-600">D</span> - Cupcake (0.39-)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+function toggleDetails(detailsId) {
+  const detailsRow = document.getElementById(detailsId);
+  const arrowId = 'arrow-' + detailsId.split('-')[1];
+  const arrow = document.getElementById(arrowId);
+  
+  if (detailsRow.classList.contains('hidden')) {
+    detailsRow.classList.remove('hidden');
+    arrow.style.transform = 'rotate(180deg)';
+  } else {
+    detailsRow.classList.add('hidden');
+    arrow.style.transform = 'rotate(0deg)';
+  }
+}
+</script>
+{% endblock %}

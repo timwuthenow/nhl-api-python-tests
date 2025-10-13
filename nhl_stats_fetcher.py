@@ -2,6 +2,12 @@ import requests
 import logging
 from datetime import datetime, timedelta
 import time
+from season_config import (
+    SEASON_START_DATE, 
+    GAME_TYPE_REGULAR,
+    is_regular_season_game,
+    get_season_string
+)
 
 
 class NHLStatsFetcher:
@@ -173,18 +179,20 @@ class NHLStatsFetcher:
 
                 time.sleep(0.1)  # Small delay between requests
 
-            # Filter for completed regular season games - any game with a final score
+            # Filter for completed regular season games only from 2025-26 season
             completed_games = [
                 game
                 for game in all_games
                 if (
-                    game.get("gameType", 0) == 2  # Regular season games
+                    game.get("gameType", 0) == GAME_TYPE_REGULAR  # Only regular season
                     and game.get("gameState", "")
-                    in ["OFF", "FINAL", "FINAL/OT", "FINAL/SO"]
+                    in ["OFF", "FINAL", "FINAL/OT", "FINAL/SO", "OVER"]  # Include all completed game states
                     and (
                         game.get("homeTeam", {}).get("score", 0) > 0
                         or game.get("awayTeam", {}).get("score", 0) > 0
                     )
+                    # Only include games from current season start
+                    and datetime.strptime(game.get("gameDate", "2000-01-01"), "%Y-%m-%d") >= SEASON_START_DATE
                 )
             ]
 
@@ -351,3 +359,33 @@ class NHLStatsFetcher:
                     )
                     return None
                 time.sleep(1)
+    
+    def get_current_season_schedule(self, team_code, max_games=15):
+        """
+        Get schedule for current season only (2025-26).
+        Only returns regular season games that have been completed.
+        """
+        try:
+            logging.info(f"Fetching current season schedule for {team_code}")
+            
+            # Use the schedule by games endpoint to get recent games
+            games = self.get_schedule_by_games(team_code, max_games)
+            
+            # Further filter to ensure we only get current season regular games
+            current_season_games = []
+            for game in games:
+                game_date = datetime.strptime(game.get("gameDate", "2000-01-01"), "%Y-%m-%d")
+                
+                # Only include games from season start onwards
+                if game_date >= SEASON_START_DATE:
+                    # Double-check it's a regular season game
+                    if game.get("gameType", 0) == GAME_TYPE_REGULAR:
+                        current_season_games.append(game)
+                        logging.info(f"Including game from {game_date.strftime('%Y-%m-%d')} - {game.get('awayTeam', {}).get('abbrev')} @ {game.get('homeTeam', {}).get('abbrev')}")
+            
+            logging.info(f"Found {len(current_season_games)} current season games for {team_code}")
+            return current_season_games
+            
+        except Exception as e:
+            logging.error(f"Error getting current season schedule for {team_code}: {str(e)}")
+            return []

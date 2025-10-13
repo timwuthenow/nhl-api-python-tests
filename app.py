@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, redirect
+from flask import Flask, render_template, jsonify, request, redirect, send_file
 from apscheduler.schedulers.background import BackgroundScheduler
 import pandas as pd
 import logging
@@ -26,6 +26,11 @@ from nhl_game_processor import GameProcessor
 from nhl_stats_fetcher import NHLStatsFetcher
 from elite_rankings_calculator import get_ultimate_rankings
 from database_manager import DatabaseManager
+from reddit_parser import RedditPowerRankingsParser
+from nhl_fine_tracker import NHLFineTracker
+from playwright.sync_api import sync_playwright
+import tempfile
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -912,6 +917,272 @@ def create_app():
             except Exception as e:
                 logger.error(f"Error refreshing ultimate rankings: {str(e)}", exc_info=True)
                 return {"success": False, "error": str(e)}, 500
+
+        @flask_app.route("/reddit-rankings", methods=["GET", "POST"])
+        def reddit_rankings():
+            """Hidden endpoint for r/hockey power rankings visualization."""
+            if request.method == "GET":
+                return render_template("reddit_rankings.html")
+            
+            try:
+                markdown_text = request.form.get("markdown_text", "").strip()
+                
+                if not markdown_text:
+                    return render_template(
+                        "reddit_rankings.html", 
+                        error="Please paste the markdown text from r/hockey power rankings."
+                    )
+                
+                # Parse the markdown
+                parser = RedditPowerRankingsParser()
+                df = parser.parse_markdown(markdown_text)
+                
+                if df is None or df.empty:
+                    return render_template(
+                        "reddit_rankings.html",
+                        error="Could not parse rankings data. Please check the markdown format.",
+                        input_text=markdown_text
+                    )
+                
+                # Format for display
+                rankings_data = parser.format_for_display(df)
+                
+                # Extract week info
+                week_start = df.iloc[0]['week_start'] if not df.empty else None
+                week_end = df.iloc[0]['week_end'] if not df.empty else None
+                
+                # Get fine tracker data
+                fine_tracker = NHLFineTracker()
+                try:
+                    fine_tracker.update_penalties()
+                    season_totals = fine_tracker.get_season_totals()
+                    fine_total = season_totals.get('total_monetary_impact', 0)
+                except Exception as e:
+                    logger.warning(f"Could not fetch fine data: {e}")
+                    fine_total = 0
+                
+                logger.info(f"Successfully parsed {len(rankings_data)} teams from r/hockey rankings")
+                
+                custom_title = request.form.get("custom_title", "").strip()
+                custom_subtitle = request.form.get("custom_subtitle", "").strip()
+                
+                # Add fine total to subtitle if not custom
+                if not custom_subtitle:
+                    custom_subtitle = f"Current Total Fines Charged by the NHL this season: ${fine_total:,.0f}"
+                return render_template(
+                    "reddit_rankings.html",
+                    rankings=rankings_data,
+                    week_start=week_start,
+                    week_end=week_end,
+                    input_text=markdown_text,
+                    custom_title=custom_title,
+                    custom_subtitle=custom_subtitle
+                )
+                
+            except Exception as e:
+                logger.error(f"Error processing reddit rankings: {str(e)}", exc_info=True)
+                return render_template(
+                    "reddit_rankings.html",
+                    error=f"Error processing rankings: {str(e)}",
+                    input_text=request.form.get("markdown_text", "")
+                )
+
+        @flask_app.route("/reddit-rankings/image", methods=["POST"])
+        def reddit_rankings_image():
+            """Generate an image from r/hockey power rankings visualization."""
+            try:
+                markdown_text = request.form.get("markdown_text", "").strip()
+                custom_title = request.form.get("custom_title", "").strip()
+                custom_subtitle = request.form.get("custom_subtitle", "").strip()
+                
+                if not markdown_text:
+                    return jsonify({"error": "Please provide markdown text"}), 400
+                
+                # Parse the markdown
+                parser = RedditPowerRankingsParser()
+                df = parser.parse_markdown(markdown_text)
+                
+                if df is None or df.empty:
+                    return jsonify({"error": "Could not parse rankings data"}), 400
+                
+                # Format for display
+                rankings_data = parser.format_for_display(df)
+                
+                # Extract week info
+                week_start = df.iloc[0]['week_start'] if not df.empty else None
+                week_end = df.iloc[0]['week_end'] if not df.empty else None
+                
+                # Get fine tracker data
+                fine_tracker = NHLFineTracker()
+                try:
+                    fine_tracker.update_penalties()
+                    season_totals = fine_tracker.get_season_totals()
+                    fine_total = season_totals.get('total_monetary_impact', 0)
+                except Exception as e:
+                    logger.warning(f"Could not fetch fine data: {e}")
+                    fine_total = 0
+                
+                # Add fine total to subtitle if not custom
+                if not custom_subtitle:
+                    custom_subtitle = f"Current Total Fines Charged by the NHL this season: ${fine_total:,.0f}"
+                
+                # Generate HTML for screenshot
+                html_content = render_template(
+                    "reddit_rankings.html",
+                    rankings=rankings_data,
+                    week_start=week_start,
+                    week_end=week_end,
+                    custom_title=custom_title,
+                    custom_subtitle=custom_subtitle,
+                    input_text=markdown_text
+                )
+                
+                # Create temporary files
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as f:
+                    f.write(html_content)
+                    temp_html_path = f.name
+                
+                temp_image_path = temp_html_path.replace('.html', '.png')
+                
+                try:
+                    # Take screenshot using Playwright
+                    with sync_playwright() as p:
+                        browser = p.chromium.launch(headless=True)
+                        context = browser.new_context(
+                            viewport={'width': 1400, 'height': 1200},
+                            device_scale_factor=2  # High DPI for crisp image
+                        )
+                        page = context.new_page()
+                        
+                        # Load the HTML file
+                        page.goto(f"file://{temp_html_path}")
+                        
+                        # Wait for content to load
+                        page.wait_for_load_state('networkidle')
+                        time.sleep(2)  # Extra wait for fonts/styling
+                        
+                        # Find the visualization container and screenshot it (updated for white background)
+                        visualization = page.locator('.bg-white.rounded-lg.shadow-2xl').first
+                        if visualization.count() > 0:
+                            visualization.screenshot(path=temp_image_path, type='png')
+                        else:
+                            # Fallback: screenshot the whole page
+                            page.screenshot(path=temp_image_path, type='png', full_page=True)
+                        
+                        browser.close()
+                    
+                    # Clean up HTML file
+                    os.unlink(temp_html_path)
+                    
+                    # Generate filename with timestamp
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"reddit_rankings_{timestamp}.png"
+                    
+                    # Send the image file
+                    return send_file(
+                        temp_image_path,
+                        as_attachment=True,
+                        download_name=filename,
+                        mimetype='image/png'
+                    )
+                    
+                except Exception as e:
+                    # Clean up files on error
+                    if os.path.exists(temp_html_path):
+                        os.unlink(temp_html_path)
+                    if os.path.exists(temp_image_path):
+                        os.unlink(temp_image_path)
+                    raise e
+                
+            except Exception as e:
+                logger.error(f"Error generating reddit rankings image: {str(e)}", exc_info=True)
+                return jsonify({"error": f"Error generating image: {str(e)}"}), 500
+
+        @flask_app.route("/penalties-list", methods=["GET"])
+        def penalties_list():
+            """Get detailed list of all penalties."""
+            try:
+                fine_tracker = NHLFineTracker()
+                fine_tracker.update_penalties()
+                season_totals = fine_tracker.get_season_totals()
+                
+                penalties_data = []
+                for penalty in fine_tracker.penalties:
+                    penalties_data.append({
+                        'player': penalty.player_name,
+                        'amount': f"${penalty.amount:,.0f}",
+                        'type': penalty.penalty_type,
+                        'reason': penalty.reason,
+                        'date': penalty.date.strftime('%Y-%m-%d'),
+                        'games': penalty.games_suspended,
+                        'url': penalty.source_url
+                    })
+                
+                return jsonify({
+                    'success': True,
+                    'total': season_totals.get('total_monetary_impact', 0),
+                    'count': len(penalties_data),
+                    'penalties': sorted(penalties_data, key=lambda x: x['date'], reverse=True)
+                })
+                
+            except Exception as e:
+                logger.error(f"Error getting penalties list: {str(e)}", exc_info=True)
+                return jsonify({"success": False, "error": str(e)}), 500
+
+        @flask_app.route("/update-penalties", methods=["POST"])
+        def update_penalties():
+            """Update NHL penalties by scraping the latest data."""
+            try:
+                import json
+                from bs4 import BeautifulSoup
+                import re
+                
+                # Fetch player safety topic page
+                topic_url = "https://www.nhl.com/news/topic/player-safety"
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+                
+                response = requests.get(topic_url, headers=headers, timeout=10)
+                response.raise_for_status()
+                
+                # Parse HTML to find all penalties
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Extract penalty articles (would need adjustment for real HTML structure)
+                new_penalties = []
+                
+                # Look for common patterns in the HTML
+                # This is a simplified example - real implementation would parse actual structure
+                text_content = soup.get_text()
+                
+                # Find fines and suspensions using regex patterns
+                fine_patterns = [
+                    r'(\w+ \w+) fined \$?([\d,]+)',
+                    r'(\w+ \w+) suspended (\d+) game',
+                    r'maximum allowable.*?(\w+ \w+)',
+                ]
+                
+                for pattern in fine_patterns:
+                    matches = re.findall(pattern, text_content, re.IGNORECASE)
+                    for match in matches:
+                        new_penalties.append(str(match))
+                
+                # Use the fine tracker with found penalties
+                fine_tracker = NHLFineTracker()
+                fine_tracker.update_penalties()
+                season_totals = fine_tracker.get_season_totals()
+                
+                return jsonify({
+                    "success": True,
+                    "total_penalties": season_totals.get('total_monetary_impact', 0),
+                    "total_incidents": season_totals.get('total_incidents', 0),
+                    "message": f"Updated: ${season_totals.get('total_monetary_impact', 0):,.0f} total from {season_totals.get('total_incidents', 0)} incidents"
+                })
+                
+            except Exception as e:
+                logger.error(f"Error updating penalties: {str(e)}", exc_info=True)
+                return jsonify({"success": False, "error": str(e)}), 500
 
         @flask_app.route("/api/elite_rankings", methods=["GET"])
         def api_elite_rankings():

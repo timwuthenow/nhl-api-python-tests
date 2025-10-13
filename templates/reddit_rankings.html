@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>r/Hockey Power Rankings Visualization</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .rank-up { color: #10b981; }
+        .rank-down { color: #ef4444; }
+        .no-change { color: #6b7280; }
+        
+        @keyframes glow-pulse {
+            0%, 100% { filter: drop-shadow(0 0 5px currentColor); }
+            50% { filter: drop-shadow(0 0 20px currentColor) drop-shadow(0 0 30px currentColor); }
+        }
+        
+        @keyframes hover-lift {
+            0% { transform: translateY(0px) scale(1); }
+            100% { transform: translateY(-8px) scale(1.02); }
+        }
+        
+        @keyframes rank-glow {
+            0%, 100% { box-shadow: 0 0 10px rgba(16, 185, 129, 0.5); }
+            50% { box-shadow: 0 0 25px rgba(16, 185, 129, 0.8), 0 0 50px rgba(16, 185, 129, 0.3); }
+        }
+        
+        /* .rank-1-5 .rank-badge { animation: rank-glow 2s ease-in-out infinite; } */
+        
+        .team-card {
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+        }
+        
+        .team-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+        }
+        
+        .rank-1-5 { border-left-color: #10b981; }
+        .rank-6-15 { border-left-color: #f59e0b; }
+        .rank-16-25 { border-left-color: #ef4444; }
+        .rank-26-32 { border-left-color: #6b7280; }
+        
+        .rank-badge {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        .rank-1-5 .rank-badge { background: linear-gradient(135deg, #10b981, #059669); color: white; }
+        .rank-6-15 .rank-badge { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; }
+        .rank-16-25 .rank-badge { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
+        .rank-26-32 .rank-badge { background: linear-gradient(135deg, #6b7280, #4b5563); color: white; }
+        
+        .change-indicator {
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        @media print {
+            body { print-color-adjust: exact; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-900 mb-2">r/Hockey Power Rankings</h1>
+            {% if week_start and week_end %}
+            <p class="text-lg text-gray-600">Week of {{ week_start }} - {{ week_end }}</p>
+            {% endif %}
+            <p class="text-sm text-gray-500 mt-2">Community-driven rankings from r/hockey volunteers</p>
+            <div class="mt-4 p-3 bg-yellow-50 rounded-lg border border-yellow-200" id="penaltyStats">
+                <p class="text-center text-yellow-800 font-semibold">
+                    💰 Current Season NHL Fines & Suspensions: <span id="totalFines" class="text-xl">$273,333</span>
+                </p>
+            </div>
+        </div>
+
+        <!-- Penalties Detail Section (hidden by default) -->
+        <div id="penaltiesDetail" class="bg-white rounded-lg shadow-lg p-6 mb-8 hidden">
+            <h3 class="text-xl font-semibold mb-4">NHL Player Safety Penalties - 2025 Season</h3>
+            <div id="penaltiesContent" class="space-y-2">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Input Section -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8 no-print">
+            <h2 class="text-xl font-semibold mb-4">Parse New Rankings</h2>
+            <form method="POST" action="/reddit-rankings">
+                <div class="mb-4">
+                    <label for="custom_title" class="block text-sm font-medium text-gray-700 mb-2">
+                        Custom Title (optional):
+                    </label>
+                    <input 
+                        type="text" 
+                        name="custom_title" 
+                        id="custom_title" 
+                        class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="e.g., r/HOCKEY POWER RANKINGS - Week 5"
+                        value="{{ custom_title or '' }}"
+                    >
+                </div>
+                <div class="mb-4">
+                    <label for="custom_subtitle" class="block text-sm font-medium text-gray-700 mb-2">
+                        Custom Subtitle (optional):
+                    </label>
+                    <input 
+                        type="text" 
+                        name="custom_subtitle" 
+                        id="custom_subtitle" 
+                        class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="e.g., 🏒 Community Power Rankings 🏒"
+                        value="{{ custom_subtitle or '' }}"
+                    >
+                </div>
+                <div class="mb-4">
+                    <label for="markdown_text" class="block text-sm font-medium text-gray-700 mb-2">
+                        Paste r/hockey power rankings markdown:
+                    </label>
+                    <textarea 
+                        name="markdown_text" 
+                        id="markdown_text" 
+                        rows="8" 
+                        class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Paste the full markdown text from r/hockey power rankings post..."
+                    >{{ input_text or '' }}</textarea>
+                </div>
+                <button 
+                    type="submit"
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                >
+                    Parse Rankings
+                </button>
+                <button 
+                    type="button"
+                    onclick="updatePenalties()"
+                    class="ml-4 bg-yellow-600 hover:bg-yellow-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                    id="updatePenaltiesBtn"
+                >
+                    🔄 Update NHL Fines
+                </button>
+                <button 
+                    type="button"
+                    onclick="showPenaltiesList()"
+                    class="ml-4 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                    id="showPenaltiesBtn"
+                >
+                    📋 Show All Penalties
+                </button>
+                {% if rankings %}
+                <button 
+                    type="button"
+                    onclick="window.print()"
+                    class="ml-4 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                >
+                    Print/Save as PDF
+                </button>
+                <button 
+                    type="button"
+                    onclick="generateImage()"
+                    class="ml-4 bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                    id="generateImageBtn"
+                >
+                    📸 Generate Image
+                </button>
+                {% endif %}
+            </form>
+        </div>
+
+        {% if error %}
+        <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-8">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-red-800">Error</h3>
+                    <div class="mt-2 text-sm text-red-700">{{ error }}</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if rankings %}
+        <!-- Compact Power Rankings - Single Page Layout -->
+        <div class="bg-white rounded-lg shadow-2xl overflow-hidden p-8 text-black" style="max-width: 1400px; margin: 0 auto;">
+            <!-- Header -->
+            <div class="text-center mb-8">
+                <h1 class="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-red-500 to-pink-500 mb-3" style="letter-spacing: 0.05em;">
+                    {{ custom_title if custom_title else 'r/HOCKEY POWER RANKINGS' }}
+                </h1>
+                {% if week_start and week_end and not custom_title %}
+                <p class="text-gray-600 text-xl font-semibold tracking-wide">Week {{ week_start }} - {{ week_end }}</p>
+                {% endif %}
+                <div class="h-3 w-64 bg-gradient-to-r from-orange-400 via-red-500 to-pink-500 mx-auto mt-4 rounded-full shadow-lg"></div>
+                <div class="text-gray-700 text-sm mt-3 font-bold tracking-widest uppercase">{{ custom_subtitle if custom_subtitle else '🏒 Community Power Rankings 🏒' }}</div>
+            </div>
+            
+            <!-- Four Column Layout - Row by Row -->
+            <div class="space-y-2">
+                {% for row in range(8) %}
+                <div class="grid grid-cols-4 gap-3">
+                    {% for col in range(4) %}
+                        {% set index = row * 4 + col %}
+                        {% if index < rankings|length %}
+                            {% set team = rankings[index] %}
+                            <div class="flex items-center p-3 rounded-lg border-2 border-white/30 hover:border-white/50 transition-all duration-300 hover:shadow-lg 
+                                 {% if team.team_abbrev in ['PIT', 'NSH', 'BOS', 'SEA'] %}text-black{% else %}text-white{% endif %}" 
+                                 style="background-color: {{ team.team_color }}CC; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.1);">
+                                <!-- Rank -->
+                                <div class="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm mr-3
+                                            {% if team.rank <= 5 %}bg-gradient-to-br from-green-400 to-green-600
+                                            {% elif team.rank <= 15 %}bg-gradient-to-br from-yellow-400 to-orange-500
+                                            {% elif team.rank <= 25 %}bg-gradient-to-br from-orange-500 to-red-500
+                                            {% else %}bg-gradient-to-br from-gray-400 to-gray-600{% endif %}">
+                                    {{ team.rank }}
+                                </div>
+                                
+                                <!-- Logo -->
+                                <div class="flex-shrink-0 w-10 h-10 mr-3">
+                                    {% if team.logo_url %}
+                                    <img src="{{ team.logo_url }}" alt="{{ team.team_abbrev }}" class="w-full h-full object-contain">
+                                    {% else %}
+                                    <div class="w-full h-full bg-gray-200 rounded-full flex items-center justify-center">
+                                        <span class="text-gray-800 font-bold text-xs">{{ team.team_abbrev }}</span>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                
+                                <!-- Team Info -->
+                                <div class="flex-grow min-w-0">
+                                    <div class="font-bold {% if team.team_abbrev in ['PIT', 'NSH', 'BOS', 'SEA'] %}text-black{% else %}text-white{% endif %} text-sm truncate">{{ team.team_abbrev }}</div>
+                                    <div class="{% if team.team_abbrev in ['PIT', 'NSH', 'BOS', 'SEA'] %}text-black/90{% else %}text-white/90{% endif %} text-xs">{{ team.avg_score }} avg</div>
+                                    {% if team.overall_record %}<div class="{% if team.team_abbrev in ['PIT', 'NSH', 'BOS', 'SEA'] %}text-black/80{% else %}text-white/80{% endif %} text-xs"><span class="{% if team.team_abbrev in ['PIT', 'NSH', 'BOS', 'SEA'] %}text-black/70{% else %}text-white/70{% endif %} text-xs">Overall:</span> {{ team.overall_record }}</div>{% endif %}
+                                    {% if team.week_record %}<div class="{% if team.team_abbrev in ['PIT', 'NSH', 'BOS', 'SEA'] %}text-black/80{% else %}text-white/80{% endif %} text-xs"><span class="{% if team.team_abbrev in ['PIT', 'NSH', 'BOS', 'SEA'] %}text-black/70{% else %}text-white/70{% endif %} text-xs">Last Week:</span> {{ team.week_record }}</div>{% endif %}
+                                </div>
+                                
+                                <!-- Change -->
+                                <div class="flex-shrink-0 {{ team.change_class }} font-bold text-sm ml-2">
+                                    {{ team.change_indicator }}
+                                </div>
+                            </div>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+            
+            <!-- Footer Credit -->
+            <div class="text-center mt-6 pt-4 border-t border-gray-300">
+                <p class="text-gray-600 text-sm">Generated from r/hockey community rankings</p>
+            </div>
+        </div>
+
+        <!-- Summary Stats -->
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">Summary</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                <div class="p-4 bg-green-50 rounded-lg">
+                    <div class="text-2xl font-bold text-green-600">{{ rankings|selectattr('rank', 'le', 5)|list|length }}</div>
+                    <div class="text-sm text-gray-600">Elite (1-5)</div>
+                </div>
+                <div class="p-4 bg-yellow-50 rounded-lg">
+                    <div class="text-2xl font-bold text-yellow-600">{{ rankings|selectattr('rank', 'gt', 5)|selectattr('rank', 'le', 15)|list|length }}</div>
+                    <div class="text-sm text-gray-600">Good (6-15)</div>
+                </div>
+                <div class="p-4 bg-red-50 rounded-lg">
+                    <div class="text-2xl font-bold text-red-600">{{ rankings|selectattr('rank', 'gt', 15)|selectattr('rank', 'le', 25)|list|length }}</div>
+                    <div class="text-sm text-gray-600">Struggling (16-25)</div>
+                </div>
+                <div class="p-4 bg-gray-50 rounded-lg">
+                    <div class="text-2xl font-bold text-gray-600">{{ rankings|selectattr('rank', 'gt', 25)|list|length }}</div>
+                    <div class="text-sm text-gray-600">Bottom (26-32)</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if not rankings %}
+        <div class="text-center py-12">
+            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <h3 class="mt-2 text-sm font-medium text-gray-900">No rankings data</h3>
+            <p class="mt-1 text-sm text-gray-500">Paste r/hockey power rankings markdown above to generate visualization.</p>
+        </div>
+        {% endif %}
+    </div>
+
+<script>
+function showPenaltiesList() {
+    const btn = document.getElementById('showPenaltiesBtn');
+    const originalText = btn.innerHTML;
+    const detailSection = document.getElementById('penaltiesDetail');
+    
+    // Toggle visibility
+    if (detailSection.classList.contains('hidden')) {
+        // Show loading state
+        btn.innerHTML = '⏳ Loading...';
+        btn.disabled = true;
+        
+        // Fetch penalties list
+        fetch('/penalties-list')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Build the penalties table
+                let html = `
+                    <div class="mb-4 p-3 bg-blue-50 rounded">
+                        <strong>Total: $${data.total.toLocaleString()}</strong> from ${data.count} incidents
+                    </div>
+                    <table class="w-full text-sm">
+                        <thead class="border-b">
+                            <tr>
+                                <th class="text-left py-2">Date</th>
+                                <th class="text-left py-2">Player/Team</th>
+                                <th class="text-left py-2">Amount</th>
+                                <th class="text-left py-2">Type</th>
+                                <th class="text-left py-2">Reason</th>
+                                <th class="text-left py-2">Games</th>
+                                <th class="text-left py-2">Link</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                data.penalties.forEach(p => {
+                    html += `
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="py-2">${p.date}</td>
+                            <td class="py-2 font-semibold">${p.player}</td>
+                            <td class="py-2">${p.amount}</td>
+                            <td class="py-2">
+                                <span class="px-2 py-1 text-xs rounded ${p.type === 'fine' ? 'bg-yellow-100' : 'bg-red-100'}">
+                                    ${p.type}
+                                </span>
+                            </td>
+                            <td class="py-2">${p.reason}</td>
+                            <td class="py-2">${p.games || '-'}</td>
+                            <td class="py-2">
+                                <a href="${p.url}" target="_blank" class="text-blue-600 hover:underline">
+                                    🔗
+                                </a>
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                html += `
+                        </tbody>
+                    </table>
+                    <div class="mt-4 text-xs text-gray-500">
+                        <p>Links can be copied from the 🔗 icons above</p>
+                    </div>
+                `;
+                
+                document.getElementById('penaltiesContent').innerHTML = html;
+                detailSection.classList.remove('hidden');
+                btn.innerHTML = '📋 Hide Penalties';
+            } else {
+                alert('Error loading penalties: ' + (data.error || 'Unknown error'));
+                btn.innerHTML = originalText;
+            }
+            btn.disabled = false;
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error loading penalties');
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        });
+    } else {
+        // Hide the section
+        detailSection.classList.add('hidden');
+        btn.innerHTML = '📋 Show All Penalties';
+    }
+}
+
+function updatePenalties() {
+    const btn = document.getElementById('updatePenaltiesBtn');
+    const originalText = btn.innerHTML;
+    
+    // Show loading state
+    btn.innerHTML = '⏳ Updating...';
+    btn.disabled = true;
+    
+    // Make request to update penalties
+    fetch('/update-penalties', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Update the display
+            const totalFinesSpan = document.getElementById('totalFines');
+            if (totalFinesSpan) {
+                totalFinesSpan.textContent = `$${data.total_penalties.toLocaleString()}`;
+            }
+            
+            // Update the subtitle field if it exists and is using default text
+            const subtitleField = document.getElementById('custom_subtitle');
+            if (subtitleField && (subtitleField.value === '' || subtitleField.value.includes('Current Total Fines'))) {
+                subtitleField.value = `Current Total Fines Charged by the NHL this season: $${data.total_penalties.toLocaleString()}`;
+            }
+            
+            // Show success message
+            alert(data.message);
+        } else {
+            alert('Error updating penalties: ' + (data.error || 'Unknown error'));
+        }
+        
+        // Reset button
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error updating penalties');
+        
+        // Reset button
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    });
+}
+
+function generateImage() {
+    const btn = document.getElementById('generateImageBtn');
+    const originalText = btn.innerHTML;
+    
+    // Show loading state
+    btn.innerHTML = '⏳ Generating...';
+    btn.disabled = true;
+    
+    // Create form data
+    const formData = new FormData();
+    formData.append('markdown_text', document.getElementById('markdown_text').value);
+    formData.append('custom_title', document.getElementById('custom_title').value);
+    formData.append('custom_subtitle', document.getElementById('custom_subtitle').value);
+    
+    // Make request to image endpoint
+    fetch('/reddit-rankings/image', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(err => Promise.reject(err));
+        }
+        return response.blob();
+    })
+    .then(blob => {
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `reddit_rankings_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        // Reset button
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error generating image: ' + (error.error || 'Unknown error'));
+        
+        // Reset button
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    });
+}
+</script>
+
+</body>
+</html>

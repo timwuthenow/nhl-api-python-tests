@@ -7,6 +7,42 @@ logger = logging.getLogger(__name__)
 
 class RedditPowerRankingsParser:
     def __init__(self):
+        # Previous week rankings for proper delta calculation
+        self.last_week_rankings = {
+            "FLA": 1,  # Florida Panthers
+            "CAR": 2,  # Carolina Hurricanes  
+            "COL": 3,  # Colorado Avalanche
+            "DAL": 4,  # Dallas Stars
+            "EDM": 5,  # Edmonton Oilers
+            "WPG": 6,  # Winnipeg Jets
+            "MTL": 7,  # Montreal Canadiens
+            "VGK": 8,  # Vegas Golden Knights
+            "BOS": 9,  # Boston Bruins
+            "WSH": 10, # Washington Capitals
+            "TOR": 11, # Toronto Maple Leafs
+            "NYR": 12, # New York Rangers
+            "NJD": 13, # New Jersey Devils
+            "MIN": 14, # Minnesota Wild
+            "SEA": 15, # Seattle Kraken
+            "PIT": 16, # Pittsburgh Penguins
+            "OTT": 17, # Ottawa Senators
+            "DET": 18, # Detroit Red Wings
+            "LAK": 19, # Los Angeles Kings
+            "CBJ": 20, # Columbus Blue Jackets
+            "VAN": 21, # Vancouver Canucks
+            "STL": 22, # St. Louis Blues
+            "UTA": 23, # Utah
+            "TBL": 24, # Tampa Bay Lightning
+            "NSH": 25, # Nashville Predators
+            "ANA": 26, # Anaheim Ducks
+            "CGY": 27, # Calgary Flames
+            "PHI": 28, # Philadelphia Flyers
+            "NYI": 29, # New York Islanders
+            "CHI": 30, # Chicago Blackhawks
+            "SJS": 31, # San Jose Sharks
+            "BUF": 32  # Buffalo Sabres
+        }
+        
         # NHL team logos (using ESPN or NHL.com URLs)
         self.team_logos = {
             "FLA": "https://a.espncdn.com/i/teamlogos/nhl/500/fla.png",
@@ -212,13 +248,13 @@ class RedditPowerRankingsParser:
             # Get team abbreviation
             team_abbrev = self.team_abbrev_map.get(team_name, team_name[:3].upper())
             
-            # Extract delta
-            delta_cell = parts[2].strip()
+            # Calculate delta based on last week's rankings
             delta = 0
-            if delta_cell != '-':
-                delta_match = re.search(r'([+-]?\d+)', delta_cell)
-                if delta_match:
-                    delta = int(delta_match.group(1))
+            if team_abbrev in self.last_week_rankings:
+                last_rank = self.last_week_rankings[team_abbrev]
+                current_rank = rank
+                delta = last_rank - current_rank  # Positive means moved up, negative means moved down
+                logger.debug(f"Team: {team_name} ({team_abbrev}), Last week: {last_rank}, This week: {current_rank}, Delta: {delta}")
             
             # Extract overall record
             overall_record = parts[3].strip() if len(parts) > 3 else ""
@@ -298,7 +334,7 @@ class RedditPowerRankingsParser:
             
             # Check for biggest faller (most negative delta)
             if delta < 0:
-                if biggest_faller is None or delta < biggest_faller['delta']:
+                if biggest_faller is None or abs(delta) > biggest_faller['delta']:
                     biggest_faller = {
                         'team': team,
                         'delta': abs(delta)

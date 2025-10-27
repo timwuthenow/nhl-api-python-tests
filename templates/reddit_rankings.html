@@ -24,20 +24,20 @@
         
         /* Fire effect for biggest riser */
         @keyframes fire {
-            0% { box-shadow: 0 0 20px #ff6b00, 0 0 40px #ff6b00, 0 0 60px #ff6b00; }
-            25% { box-shadow: 0 0 25px #ff4500, 0 0 50px #ff4500, 0 0 70px #ff4500; }
-            50% { box-shadow: 0 0 30px #ff6b00, 0 0 60px #ff6b00, 0 0 80px #ff6b00; }
-            75% { box-shadow: 0 0 25px #ff8c00, 0 0 50px #ff8c00, 0 0 70px #ff8c00; }
-            100% { box-shadow: 0 0 20px #ff6b00, 0 0 40px #ff6b00, 0 0 60px #ff6b00; }
+            0% { box-shadow: 0 0 8px #ff6b00, 0 0 12px #ff6b00; }
+            25% { box-shadow: 0 0 10px #ff4500, 0 0 15px #ff4500; }
+            50% { box-shadow: 0 0 12px #ff6b00, 0 0 18px #ff6b00; }
+            75% { box-shadow: 0 0 10px #ff8c00, 0 0 15px #ff8c00; }
+            100% { box-shadow: 0 0 8px #ff6b00, 0 0 12px #ff6b00; }
         }
-        
+
         /* Ice effect for biggest faller */
         @keyframes ice {
-            0% { box-shadow: 0 0 20px #00bfff, 0 0 40px #00bfff, 0 0 60px #00bfff; }
-            25% { box-shadow: 0 0 25px #87ceeb, 0 0 50px #87ceeb, 0 0 70px #87ceeb; }
-            50% { box-shadow: 0 0 30px #00bfff, 0 0 60px #00bfff, 0 0 80px #00bfff; }
-            75% { box-shadow: 0 0 25px #4682b4, 0 0 50px #4682b4, 0 0 70px #4682b4; }
-            100% { box-shadow: 0 0 20px #00bfff, 0 0 40px #00bfff, 0 0 60px #00bfff; }
+            0% { box-shadow: 0 0 8px #00bfff, 0 0 12px #00bfff; }
+            25% { box-shadow: 0 0 10px #87ceeb, 0 0 15px #87ceeb; }
+            50% { box-shadow: 0 0 12px #00bfff, 0 0 18px #00bfff; }
+            75% { box-shadow: 0 0 10px #4682b4, 0 0 15px #4682b4; }
+            100% { box-shadow: 0 0 8px #00bfff, 0 0 12px #00bfff; }
         }
         
         .fire-border {
@@ -156,15 +156,57 @@
                     <label for="custom_subtitle" class="block text-sm font-medium text-gray-700 mb-2">
                         Custom Subtitle (optional):
                     </label>
-                    <input 
-                        type="text" 
-                        name="custom_subtitle" 
-                        id="custom_subtitle" 
+                    <input
+                        type="text"
+                        name="custom_subtitle"
+                        id="custom_subtitle"
                         class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="e.g., 🏒 Community Power Rankings 🏒"
                         value="{{ custom_subtitle or '' }}"
                     >
                 </div>
+
+                <!-- Tier Name Inputs -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Custom Tier Names (optional):
+                    </label>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                            type="text"
+                            name="tier1_name"
+                            id="tier1_name"
+                            class="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Tier 1 (Ranks 1-8)"
+                            value="{{ tier1_name or '' }}"
+                        >
+                        <input
+                            type="text"
+                            name="tier2_name"
+                            id="tier2_name"
+                            class="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Tier 2 (Ranks 9-16)"
+                            value="{{ tier2_name or '' }}"
+                        >
+                        <input
+                            type="text"
+                            name="tier3_name"
+                            id="tier3_name"
+                            class="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Tier 3 (Ranks 17-24)"
+                            value="{{ tier3_name or '' }}"
+                        >
+                        <input
+                            type="text"
+                            name="tier4_name"
+                            id="tier4_name"
+                            class="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Tier 4 (Ranks 25-32)"
+                            value="{{ tier4_name or '' }}"
+                        >
+                    </div>
+                </div>
+
                 <div class="mb-4">
                     <label for="markdown_text" class="block text-sm font-medium text-gray-700 mb-2">
                         Paste r/hockey power rankings markdown:
@@ -322,32 +364,32 @@
         </div>
 
         <!-- Single Column Row Layout (New) -->
-        <div id="rowsLayout" class="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg shadow-2xl overflow-hidden p-3 text-black" style="max-width: 700px; margin: 0 auto;" data-capture-area="true">
+        <div id="rowsLayout" class="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg shadow-2xl overflow-hidden p-3 text-black" style="max-width: 1000px; margin: 0 auto;" data-capture-area="true">
             <!-- Header -->
-            <div class="text-center mb-8">
-                <h1 class="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-red-500 to-pink-500 mb-3" style="letter-spacing: 0.05em;">
+            <div class="text-center mb-6">
+                <h1 class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-red-500 to-pink-500 mb-2" style="letter-spacing: 0.05em;">
                     {{ custom_title if custom_title else 'r/HOCKEY POWER RANKINGS' }}
                 </h1>
-                {% if week_start and week_end and not custom_title %}
-                <p class="text-gray-600 text-lg font-semibold tracking-wide">Week {{ week_start }} - {{ week_end }}</p>
+                {% if week_start and week_end %}
+                <p class="text-gray-600 text-base font-semibold tracking-wide">Week of {{ week_start }} - {{ week_end }}</p>
                 {% endif %}
-                <div class="h-2 w-48 bg-gradient-to-r from-orange-400 via-red-500 to-pink-500 mx-auto mt-4 rounded-full shadow-lg"></div>
-                <div class="text-gray-700 text-xs mt-3 font-bold tracking-widest uppercase">{{ custom_subtitle if custom_subtitle else '🏒 Community Power Rankings 🏒' }}</div>
+                <div class="h-2 w-48 bg-gradient-to-r from-orange-400 via-red-500 to-pink-500 mx-auto mt-3 rounded-full shadow-lg"></div>
+                <div class="text-gray-700 text-xs mt-2 font-bold tracking-widest uppercase">{{ custom_subtitle if custom_subtitle else '🏒 Community Power Rankings 🏒' }}</div>
             </div>
-            
-            <!-- Single Column Layout with 5 Tiers -->
-            <div class="space-y-3">
-                <!-- Early Elite (1-6) -->
-                <div>
-                    <h3 class="text-sm font-bold text-green-700 mb-1 uppercase tracking-wide">Early Elite (1-6)</h3>
-                    <div class="space-y-0.5">
-                        {% for team in rankings if team.rank <= 6 %}
-                        {% set is_biggest_riser = biggest_riser and team.team_abbrev == biggest_riser.team.team_abbrev %}
-                        {% set is_biggest_faller = biggest_faller and team.team_abbrev == biggest_faller.team.team_abbrev %}
-                        <div class="group flex items-center p-2 rounded-lg transition-all duration-300 hover:transform hover:scale-[1.01] bg-white border-2 hover:shadow-lg 
-                             {% if is_biggest_riser %}fire-border
-                             {% elif is_biggest_faller %}ice-border
-                             {% else %}border-green-300 bg-gradient-to-r from-green-50 to-white{% endif %}">
+
+            <!-- Two Column Layout -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Left Column: Ranks 1-16 -->
+                <div class="space-y-1.5">
+                    {% for team in rankings if team.rank <= 16 %}
+                    {% set is_biggest_riser = biggest_riser and team.team_abbrev == biggest_riser.team.team_abbrev %}
+                    {% set is_biggest_faller = biggest_faller and team.team_abbrev == biggest_faller.team.team_abbrev %}
+                    <div class="group flex items-center p-2 rounded-lg transition-all duration-300 hover:transform hover:scale-[1.01] bg-white border-2 hover:shadow-lg
+                         {% if is_biggest_riser %}fire-border
+                         {% elif is_biggest_faller %}ice-border
+                         {% elif team.rank <= 6 %}border-green-300 bg-gradient-to-r from-green-50 to-white
+                         {% elif team.rank <= 13 %}border-yellow-300 bg-gradient-to-r from-yellow-50 to-white
+                         {% else %}border-blue-300 bg-gradient-to-r from-blue-50 to-white{% endif %}">
                     
                             <!-- Rank Badge -->
                             <div class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs mr-1 shadow-md
@@ -378,7 +420,7 @@
                             <!-- Team Name -->
                             <div class="flex items-center flex-grow min-w-0 mr-2">
                                 <div class="flex items-center px-1 py-0.5 rounded" style="background-color: {{ team.team_color }}15; border-left: 3px solid {{ team.team_color }};">
-                                    <span class="font-bold text-xs" style="color: {{ team.team_color }}DD;">{{ team.team_name }}</span>
+                                    <span class="font-bold text-xs" style="color: {% if team.rank >= 7 and team.rank <= 16 %}#000000{% else %}{{ team.team_color }}DD{% endif %};">{{ team.team_name }}</span>
                                 </div>
                             </div>
                     
@@ -415,25 +457,28 @@
                                 {{ team.change_indicator }}
                             </div>
                         </div>
-                        {% endfor %}
-                    </div>
+                    {% endfor %}
                 </div>
-                
-                <!-- Goodish Gamers (7-13) -->
-                <div>
-                    <h3 class="text-sm font-bold text-yellow-700 mb-1 uppercase tracking-wide">Goodish Gamers (7-13)</h3>
-                    <div class="space-y-0.5">
-                        {% for team in rankings if team.rank >= 7 and team.rank <= 13 %}
-                        {% set is_biggest_riser = biggest_riser and team.team_abbrev == biggest_riser.team.team_abbrev %}
-                        {% set is_biggest_faller = biggest_faller and team.team_abbrev == biggest_faller.team.team_abbrev %}
-                        <div class="flex items-center p-1 rounded bg-white border 
-                             {% if is_biggest_riser %}fire-border
-                             {% elif is_biggest_faller %}ice-border
-                             {% else %}border-yellow-300{% endif %}">
-                            <!-- Same structure as Elite tier but with yellow colors -->
-                            <div class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs mr-1 shadow-md bg-gradient-to-br from-yellow-500 to-yellow-700 text-white">
-                                {{ team.rank }}
-                            </div>
+
+                <!-- Right Column: Ranks 17-32 -->
+                <div class="space-y-1.5">
+                    {% for team in rankings if team.rank >= 17 %}
+                    {% set is_biggest_riser = biggest_riser and team.team_abbrev == biggest_riser.team.team_abbrev %}
+                    {% set is_biggest_faller = biggest_faller and team.team_abbrev == biggest_faller.team.team_abbrev %}
+                    <div class="group flex items-center p-2 rounded-lg transition-all duration-300 hover:transform hover:scale-[1.01] bg-white border-2 hover:shadow-lg
+                         {% if is_biggest_riser %}fire-border
+                         {% elif is_biggest_faller %}ice-border
+                         {% elif team.rank <= 20 %}border-blue-300 bg-gradient-to-r from-blue-50 to-white
+                         {% elif team.rank <= 27 %}border-orange-300 bg-gradient-to-r from-orange-50 to-white
+                         {% else %}border-red-300 bg-gradient-to-r from-red-50 to-white{% endif %}">
+
+                        <!-- Rank Badge -->
+                        <div class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs mr-1 shadow-md
+                                    {% if team.rank <= 20 %}bg-gradient-to-br from-blue-500 to-blue-700 text-white
+                                    {% elif team.rank <= 27 %}bg-gradient-to-br from-orange-500 to-orange-700 text-white
+                                    {% else %}bg-gradient-to-br from-red-500 to-red-700 text-white{% endif %}">
+                            {{ team.rank }}
+                        </div>
                             <div class="flex-shrink-0 w-6 h-6 mr-1">
                                 {% if team.logo_url %}
                                 <img src="{{ team.logo_url }}" alt="{{ team.team_abbrev }}" class="w-full h-full object-contain">
@@ -450,9 +495,10 @@
                             <div class="text-lg mr-1 animate-pulse">🧊</div>
                             {% endif %}
                             
-                            <div class="flex items-center flex-grow min-w-0 mr-3">
+                            <!-- Team Name -->
+                            <div class="flex items-center flex-grow min-w-0 mr-2">
                                 <div class="flex items-center px-1 py-0.5 rounded" style="background-color: {{ team.team_color }}15; border-left: 3px solid {{ team.team_color }};">
-                                    <span class="font-bold text-xs" style="color: {{ team.team_color }}DD;">{{ team.team_name }}</span>
+                                    <span class="font-bold text-xs" style="color: {% if team.rank >= 7 and team.rank <= 16 %}#000000{% else %}{{ team.team_color }}DD{% endif %};">{{ team.team_name }}</span>
                                 </div>
                             </div>
                             <div class="flex items-center space-x-1 text-xs text-gray-700">
@@ -480,235 +526,42 @@
                                 {{ team.change_indicator }}
                             </div>
                         </div>
-                        {% endfor %}
-                    </div>
-                </div>
-                
-                <!-- Mushy Middle (14-20) -->
-                <div>
-                    <h3 class="text-sm font-bold text-blue-700 mb-1 uppercase tracking-wide">Mushy Middle (14-20)</h3>
-                    <div class="space-y-0.5">
-                        {% for team in rankings if team.rank >= 14 and team.rank <= 20 %}
-                        {% set is_biggest_riser = biggest_riser and team.team_abbrev == biggest_riser.team.team_abbrev %}
-                        {% set is_biggest_faller = biggest_faller and team.team_abbrev == biggest_faller.team.team_abbrev %}
-                        <div class="flex items-center p-1 rounded bg-white border 
-                             {% if is_biggest_riser %}fire-border
-                             {% elif is_biggest_faller %}ice-border
-                             {% else %}border-blue-300{% endif %}">
-                            <div class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs mr-1 shadow-md bg-gradient-to-br from-blue-500 to-blue-700 text-white">
-                                {{ team.rank }}
-                            </div>
-                            <div class="flex-shrink-0 w-6 h-6 mr-1">
-                                {% if team.logo_url %}
-                                <img src="{{ team.logo_url }}" alt="{{ team.team_abbrev }}" class="w-full h-full object-contain">
-                                {% else %}
-                                <div class="w-full h-full bg-gray-200 rounded-full flex items-center justify-center">
-                                    <span class="text-gray-800 font-bold text-xs">{{ team.team_abbrev }}</span>
-                                </div>
-                                {% endif %}
-                            </div>
-                            
-                            {% if is_biggest_riser %}
-                            <div class="text-lg mr-1 animate-pulse">🔥</div>
-                            {% elif is_biggest_faller %}
-                            <div class="text-lg mr-1 animate-pulse">🧊</div>
-                            {% endif %}
-                            
-                            <div class="flex items-center flex-grow min-w-0 mr-3">
-                                <div class="flex items-center px-1 py-0.5 rounded" style="background-color: {{ team.team_color }}15; border-left: 3px solid {{ team.team_color }};">
-                                    <span class="font-bold text-xs" style="color: {{ team.team_color }}DD;">{{ team.team_name }}</span>
-                                </div>
-                            </div>
-                            <div class="flex items-center space-x-1 text-xs text-gray-700">
-                                <div class="text-center bg-gray-50 rounded px-1 py-0.5">
-                                    <div class="font-bold text-gray-800">{{ team.avg_score }}</div>
-                                    <div class="text-xs text-gray-500">avg</div>
-                                </div>
-                                {% if team.overall_record %}
-                                <div class="text-center bg-blue-50 rounded px-1 py-0.5">
-                                    <div class="font-bold text-blue-800">{{ team.overall_record }}</div>
-                                    <div class="text-xs text-blue-600">overall</div>
-                                </div>
-                                {% endif %}
-                                {% if team.week_record %}
-                                <div class="text-center bg-purple-50 rounded px-1 py-0.5">
-                                    <div class="font-bold text-purple-800">{{ team.week_record }}</div>
-                                    <div class="text-xs text-purple-600">week</div>
-                                </div>
-                                {% endif %}
-                            </div>
-                            <div class="flex-shrink-0 text-xs ml-1 flex items-center font-bold
-                                 {% if team.change_indicator and '+' in team.change_indicator %}text-green-600
-                                 {% elif team.change_indicator and '-' in team.change_indicator %}text-red-600
-                                 {% else %}text-gray-400{% endif %}">
-                                {{ team.change_indicator }}
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-                
-                <!-- Some Struggles (21-27) -->
-                <div>
-                    <h3 class="text-sm font-bold text-orange-700 mb-1 uppercase tracking-wide">Some Struggles (21-27)</h3>
-                    <div class="space-y-0.5">
-                        {% for team in rankings if team.rank >= 21 and team.rank <= 27 %}
-                        {% set is_biggest_riser = biggest_riser and team.team_abbrev == biggest_riser.team.team_abbrev %}
-                        {% set is_biggest_faller = biggest_faller and team.team_abbrev == biggest_faller.team.team_abbrev %}
-                        <div class="flex items-center p-1 rounded bg-white border 
-                             {% if is_biggest_riser %}fire-border
-                             {% elif is_biggest_faller %}ice-border
-                             {% else %}border-orange-300{% endif %}">
-                            <div class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs mr-1 shadow-md bg-gradient-to-br from-orange-500 to-orange-700 text-white">
-                                {{ team.rank }}
-                            </div>
-                            <div class="flex-shrink-0 w-6 h-6 mr-1">
-                                {% if team.logo_url %}
-                                <img src="{{ team.logo_url }}" alt="{{ team.team_abbrev }}" class="w-full h-full object-contain">
-                                {% else %}
-                                <div class="w-full h-full bg-gray-200 rounded-full flex items-center justify-center">
-                                    <span class="text-gray-800 font-bold text-xs">{{ team.team_abbrev }}</span>
-                                </div>
-                                {% endif %}
-                            </div>
-                            
-                            {% if is_biggest_riser %}
-                            <div class="text-lg mr-1 animate-pulse">🔥</div>
-                            {% elif is_biggest_faller %}
-                            <div class="text-lg mr-1 animate-pulse">🧊</div>
-                            {% endif %}
-                            
-                            <div class="flex items-center flex-grow min-w-0 mr-3">
-                                <div class="flex items-center px-1 py-0.5 rounded" style="background-color: {{ team.team_color }}15; border-left: 3px solid {{ team.team_color }};">
-                                    <span class="font-bold text-xs" style="color: {{ team.team_color }}DD;">{{ team.team_name }}</span>
-                                </div>
-                            </div>
-                            <div class="flex items-center space-x-1 text-xs text-gray-700">
-                                <div class="text-center bg-gray-50 rounded px-1 py-0.5">
-                                    <div class="font-bold text-gray-800">{{ team.avg_score }}</div>
-                                    <div class="text-xs text-gray-500">avg</div>
-                                </div>
-                                {% if team.overall_record %}
-                                <div class="text-center bg-blue-50 rounded px-1 py-0.5">
-                                    <div class="font-bold text-blue-800">{{ team.overall_record }}</div>
-                                    <div class="text-xs text-blue-600">overall</div>
-                                </div>
-                                {% endif %}
-                                {% if team.week_record %}
-                                <div class="text-center bg-purple-50 rounded px-1 py-0.5">
-                                    <div class="font-bold text-purple-800">{{ team.week_record }}</div>
-                                    <div class="text-xs text-purple-600">week</div>
-                                </div>
-                                {% endif %}
-                            </div>
-                            <div class="flex-shrink-0 text-xs ml-1 flex items-center font-bold
-                                 {% if team.change_indicator and '+' in team.change_indicator %}text-green-600
-                                 {% elif team.change_indicator and '-' in team.change_indicator %}text-red-600
-                                 {% else %}text-gray-400{% endif %}">
-                                {{ team.change_indicator }}
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-                
-                <!-- Bottom Tier (28-32) -->
-                <div>
-                    <h3 class="text-sm font-bold text-red-700 mb-1 uppercase tracking-wide">Fallin' for Gavin (28-32)</h3>
-                    <div class="space-y-0.5">
-                        {% for team in rankings if team.rank >= 28 %}
-                        {% set is_biggest_riser = biggest_riser and team.team_abbrev == biggest_riser.team.team_abbrev %}
-                        {% set is_biggest_faller = biggest_faller and team.team_abbrev == biggest_faller.team.team_abbrev %}
-                        <div class="flex items-center p-1 rounded bg-white border 
-                             {% if is_biggest_riser %}fire-border
-                             {% elif is_biggest_faller %}ice-border
-                             {% else %}border-red-300{% endif %}">
-                            <div class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs mr-1 shadow-md bg-gradient-to-br from-red-500 to-red-700 text-white">
-                                {{ team.rank }}
-                            </div>
-                            <div class="flex-shrink-0 w-6 h-6 mr-1">
-                                {% if team.logo_url %}
-                                <img src="{{ team.logo_url }}" alt="{{ team.team_abbrev }}" class="w-full h-full object-contain">
-                                {% else %}
-                                <div class="w-full h-full bg-gray-200 rounded-full flex items-center justify-center">
-                                    <span class="text-gray-800 font-bold text-xs">{{ team.team_abbrev }}</span>
-                                </div>
-                                {% endif %}
-                            </div>
-                            
-                            {% if is_biggest_riser %}
-                            <div class="text-lg mr-1 animate-pulse">🔥</div>
-                            {% elif is_biggest_faller %}
-                            <div class="text-lg mr-1 animate-pulse">🧊</div>
-                            {% endif %}
-                            
-                            <div class="flex items-center flex-grow min-w-0 mr-3">
-                                <div class="flex items-center px-1 py-0.5 rounded" style="background-color: {{ team.team_color }}15; border-left: 3px solid {{ team.team_color }};">
-                                    <span class="font-bold text-xs" style="color: {{ team.team_color }}DD;">{{ team.team_name }}</span>
-                                </div>
-                            </div>
-                            <div class="flex items-center space-x-1 text-xs text-gray-700">
-                                <div class="text-center bg-gray-50 rounded px-1 py-0.5">
-                                    <div class="font-bold text-gray-800">{{ team.avg_score }}</div>
-                                    <div class="text-xs text-gray-500">avg</div>
-                                </div>
-                                {% if team.overall_record %}
-                                <div class="text-center bg-blue-50 rounded px-1 py-0.5">
-                                    <div class="font-bold text-blue-800">{{ team.overall_record }}</div>
-                                    <div class="text-xs text-blue-600">overall</div>
-                                </div>
-                                {% endif %}
-                                {% if team.week_record %}
-                                <div class="text-center bg-purple-50 rounded px-1 py-0.5">
-                                    <div class="font-bold text-purple-800">{{ team.week_record }}</div>
-                                    <div class="text-xs text-purple-600">week</div>
-                                </div>
-                                {% endif %}
-                            </div>
-                            <div class="flex-shrink-0 text-xs ml-1 flex items-center font-bold
-                                 {% if team.change_indicator and '+' in team.change_indicator %}text-green-600
-                                 {% elif team.change_indicator and '-' in team.change_indicator %}text-red-600
-                                 {% else %}text-gray-400{% endif %}">
-                                {{ team.change_indicator }}
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
+                    {% endfor %}
                 </div>
             </div>
         </div>
         
         <!-- Biggest Movers (Separate Section with Fire/Ice) -->
         {% if biggest_riser or biggest_faller %}
-        <div class="mt-8 flex justify-center gap-8">
+        <div class="mt-4 flex justify-center gap-4">
             {% if biggest_riser %}
-            <div class="fire-border flex items-center p-6 rounded-xl transform hover:scale-105 transition-transform bg-white">
-                <div class="text-4xl mr-4">🔥</div>
+            <div class="fire-border flex items-center p-3 rounded-lg transform hover:scale-105 transition-transform bg-white">
+                <div class="text-2xl mr-2">🔥</div>
                 <div class="text-center">
-                    <div class="font-black text-xl text-orange-600">HOTTEST TEAM</div>
-                    <div class="flex items-center justify-center mt-3">
+                    <div class="font-black text-base text-orange-600">HOTTEST TEAM</div>
+                    <div class="flex items-center justify-center mt-1">
                         {% if biggest_riser.team.logo_url %}
-                        <img src="{{ biggest_riser.team.logo_url }}" alt="{{ biggest_riser.team.team_abbrev }}" class="w-10 h-10 mr-3">
+                        <img src="{{ biggest_riser.team.logo_url }}" alt="{{ biggest_riser.team.team_abbrev }}" class="w-6 h-6 mr-2">
                         {% endif %}
-                        <span class="font-black text-2xl" style="color: {{ biggest_riser.team.team_color }};">{{ biggest_riser.team.team_name }}</span>
+                        <span class="font-black text-lg" style="color: {{ biggest_riser.team.team_color }};">{{ biggest_riser.team.team_name }}</span>
                     </div>
-                    <div class="text-lg font-bold text-orange-700 mt-2">+{{ biggest_riser.delta }} spots 🚀</div>
+                    <div class="text-sm font-bold text-orange-700 mt-1">+{{ biggest_riser.delta }} spots 🚀</div>
                 </div>
             </div>
             {% endif %}
-            
+
             {% if biggest_faller %}
-            <div class="ice-border flex items-center p-6 rounded-xl transform hover:scale-105 transition-transform bg-white">
-                <div class="text-4xl mr-4">🧊</div>
+            <div class="ice-border flex items-center p-3 rounded-lg transform hover:scale-105 transition-transform bg-white">
+                <div class="text-2xl mr-2">🧊</div>
                 <div class="text-center">
-                    <div class="font-black text-xl text-blue-600">COLDEST TEAM</div>
-                    <div class="flex items-center justify-center mt-3">
+                    <div class="font-black text-base text-blue-600">COLDEST TEAM</div>
+                    <div class="flex items-center justify-center mt-1">
                         {% if biggest_faller.team.logo_url %}
-                        <img src="{{ biggest_faller.team.logo_url }}" alt="{{ biggest_faller.team.team_abbrev }}" class="w-10 h-10 mr-3">
+                        <img src="{{ biggest_faller.team.logo_url }}" alt="{{ biggest_faller.team.team_abbrev }}" class="w-6 h-6 mr-2">
                         {% endif %}
-                        <span class="font-black text-2xl" style="color: {{ biggest_faller.team.team_color }};">{{ biggest_faller.team.team_name }}</span>
+                        <span class="font-black text-lg" style="color: {{ biggest_faller.team.team_color }};">{{ biggest_faller.team.team_name }}</span>
                     </div>
-                    <div class="text-lg font-bold text-blue-700 mt-2">-{{ biggest_faller.delta }} spots ❄️</div>
+                    <div class="text-sm font-bold text-blue-700 mt-1">-{{ biggest_faller.delta }} spots ❄️</div>
                 </div>
             </div>
             {% endif %}
@@ -716,29 +569,28 @@
         {% endif %}
         
         <!-- Footer Credit (Shared across both layouts) -->
-        <div class="text-center mt-6 pt-4 border-t border-gray-300">
-            <p class="text-gray-600 text-sm">Generated from r/hockey community rankings</p>
+        <div class="text-center mt-3 pt-2 border-t border-gray-300">
+            <p class="text-gray-600 text-xs">Generated from r/hockey community rankings</p>
         </div>
 
         <!-- Summary Stats -->
-        <div class="bg-white rounded-lg shadow-lg p-6">
-            <h2 class="text-xl font-semibold mb-4">Summary</h2>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                <div class="p-4 bg-green-50 rounded-lg">
-                    <div class="text-2xl font-bold text-green-600">{{ rankings|selectattr('rank', 'le', 5)|list|length }}</div>
-                    <div class="text-sm text-gray-600">Elite (1-5)</div>
+        <div class="bg-white rounded-lg shadow-lg p-3 mt-3">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
+                <div class="p-2 bg-green-50 rounded">
+                    <div class="text-xl font-bold text-green-600">{{ rankings|selectattr('rank', 'le', 5)|list|length }}</div>
+                    <div class="text-xs text-gray-600">Elite (1-5)</div>
                 </div>
-                <div class="p-4 bg-yellow-50 rounded-lg">
-                    <div class="text-2xl font-bold text-yellow-600">{{ rankings|selectattr('rank', 'gt', 5)|selectattr('rank', 'le', 15)|list|length }}</div>
-                    <div class="text-sm text-gray-600">Good (6-15)</div>
+                <div class="p-2 bg-yellow-50 rounded">
+                    <div class="text-xl font-bold text-yellow-600">{{ rankings|selectattr('rank', 'gt', 5)|selectattr('rank', 'le', 15)|list|length }}</div>
+                    <div class="text-xs text-gray-600">Good (6-15)</div>
                 </div>
-                <div class="p-4 bg-red-50 rounded-lg">
-                    <div class="text-2xl font-bold text-red-600">{{ rankings|selectattr('rank', 'gt', 15)|selectattr('rank', 'le', 25)|list|length }}</div>
-                    <div class="text-sm text-gray-600">Struggling (16-25)</div>
+                <div class="p-2 bg-red-50 rounded">
+                    <div class="text-xl font-bold text-red-600">{{ rankings|selectattr('rank', 'gt', 15)|selectattr('rank', 'le', 25)|list|length }}</div>
+                    <div class="text-xs text-gray-600">Struggling (16-25)</div>
                 </div>
-                <div class="p-4 bg-gray-50 rounded-lg">
-                    <div class="text-2xl font-bold text-gray-600">{{ rankings|selectattr('rank', 'gt', 25)|list|length }}</div>
-                    <div class="text-sm text-gray-600">Bottom (26-32)</div>
+                <div class="p-2 bg-gray-50 rounded">
+                    <div class="text-xl font-bold text-gray-600">{{ rankings|selectattr('rank', 'gt', 25)|list|length }}</div>
+                    <div class="text-xs text-gray-600">Bottom (26-32)</div>
                 </div>
             </div>
         </div>

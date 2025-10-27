@@ -968,7 +968,13 @@ def create_app():
                 
                 custom_title = request.form.get("custom_title", "").strip()
                 custom_subtitle = request.form.get("custom_subtitle", "").strip()
-                
+
+                # Get tier names
+                tier1_name = request.form.get("tier1_name", "").strip()
+                tier2_name = request.form.get("tier2_name", "").strip()
+                tier3_name = request.form.get("tier3_name", "").strip()
+                tier4_name = request.form.get("tier4_name", "").strip()
+
                 # Add fine total to subtitle if not custom
                 if not custom_subtitle:
                     custom_subtitle = f"Current Total Fines Charged by the NHL this season: ${fine_total:,.0f}"
@@ -981,7 +987,11 @@ def create_app():
                     week_end=week_end,
                     input_text=markdown_text,
                     custom_title=custom_title,
-                    custom_subtitle=custom_subtitle
+                    custom_subtitle=custom_subtitle,
+                    tier1_name=tier1_name,
+                    tier2_name=tier2_name,
+                    tier3_name=tier3_name,
+                    tier4_name=tier4_name
                 )
                 
             except Exception as e:
@@ -999,7 +1009,13 @@ def create_app():
                 markdown_text = request.form.get("markdown_text", "").strip()
                 custom_title = request.form.get("custom_title", "").strip()
                 custom_subtitle = request.form.get("custom_subtitle", "").strip()
-                
+
+                # Get tier names
+                tier1_name = request.form.get("tier1_name", "").strip()
+                tier2_name = request.form.get("tier2_name", "").strip()
+                tier3_name = request.form.get("tier3_name", "").strip()
+                tier4_name = request.form.get("tier4_name", "").strip()
+
                 if not markdown_text:
                     return jsonify({"error": "Please provide markdown text"}), 400
                 
@@ -1070,9 +1086,9 @@ def create_app():
                         # Wait for content to load
                         page.wait_for_load_state('networkidle')
                         time.sleep(2)  # Extra wait for fonts/styling
-                        
-                        # Find the visualization container and screenshot it (updated for white background)
-                        visualization = page.locator('.bg-white.rounded-lg.shadow-2xl').first
+
+                        # Find the visualization container with data-capture-area attribute
+                        visualization = page.locator('[data-capture-area="true"]')
                         if visualization.count() > 0:
                             visualization.screenshot(path=temp_image_path, type='png')
                         else:

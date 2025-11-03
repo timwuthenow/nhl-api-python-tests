@@ -166,45 +166,38 @@
                     >
                 </div>
 
-                <!-- Tier Name Inputs -->
+                <!-- Custom Emoji Selectors -->
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">
-                        Custom Tier Names (optional):
+                        Custom Emojis for Biggest Movers (optional):
                     </label>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <input
-                            type="text"
-                            name="tier1_name"
-                            id="tier1_name"
-                            class="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="Tier 1 (Ranks 1-8)"
-                            value="{{ tier1_name or '' }}"
-                        >
-                        <input
-                            type="text"
-                            name="tier2_name"
-                            id="tier2_name"
-                            class="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="Tier 2 (Ranks 9-16)"
-                            value="{{ tier2_name or '' }}"
-                        >
-                        <input
-                            type="text"
-                            name="tier3_name"
-                            id="tier3_name"
-                            class="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="Tier 3 (Ranks 17-24)"
-                            value="{{ tier3_name or '' }}"
-                        >
-                        <input
-                            type="text"
-                            name="tier4_name"
-                            id="tier4_name"
-                            class="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="Tier 4 (Ranks 25-32)"
-                            value="{{ tier4_name or '' }}"
-                        >
+                        <div>
+                            <label for="hot_emoji" class="block text-xs text-gray-600 mb-1">Hottest Team (Rising):</label>
+                            <input
+                                type="text"
+                                name="hot_emoji"
+                                id="hot_emoji"
+                                class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="🔥"
+                                value="{{ hot_emoji or '🔥' }}"
+                                maxlength="10"
+                            >
+                        </div>
+                        <div>
+                            <label for="cold_emoji" class="block text-xs text-gray-600 mb-1">Coldest Team (Falling):</label>
+                            <input
+                                type="text"
+                                name="cold_emoji"
+                                id="cold_emoji"
+                                class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="🧊"
+                                value="{{ cold_emoji or '🧊' }}"
+                                maxlength="10"
+                            >
+                        </div>
                     </div>
+                    <p class="text-xs text-gray-500 mt-1">Try: 🔥🧊❄️💀⚡🚀💩🤡👑💎🗑️⭐</p>
                 </div>
 
                 <div class="mb-4">
@@ -412,9 +405,9 @@
                             </div>
                             
                             {% if is_biggest_riser %}
-                            <div class="text-lg mr-1 animate-pulse">🔥</div>
+                            <div class="text-lg mr-1 animate-pulse">{{ hot_emoji or '🔥' }}</div>
                             {% elif is_biggest_faller %}
-                            <div class="text-lg mr-1 animate-pulse">🧊</div>
+                            <div class="text-lg mr-1 animate-pulse">{{ cold_emoji or '🧊' }}</div>
                             {% endif %}
                     
                             <!-- Team Name -->
@@ -490,9 +483,9 @@
                             </div>
                             
                             {% if is_biggest_riser %}
-                            <div class="text-lg mr-1 animate-pulse">🔥</div>
+                            <div class="text-lg mr-1 animate-pulse">{{ hot_emoji or '🔥' }}</div>
                             {% elif is_biggest_faller %}
-                            <div class="text-lg mr-1 animate-pulse">🧊</div>
+                            <div class="text-lg mr-1 animate-pulse">{{ cold_emoji or '🧊' }}</div>
                             {% endif %}
                             
                             <!-- Team Name -->
@@ -536,7 +529,7 @@
         <div class="mt-4 flex justify-center gap-4">
             {% if biggest_riser %}
             <div class="fire-border flex items-center p-3 rounded-lg transform hover:scale-105 transition-transform bg-white">
-                <div class="text-2xl mr-2">🔥</div>
+                <div class="text-2xl mr-2">{{ hot_emoji or '🔥' }}</div>
                 <div class="text-center">
                     <div class="font-black text-base text-orange-600">HOTTEST TEAM</div>
                     <div class="flex items-center justify-center mt-1">
@@ -552,7 +545,7 @@
 
             {% if biggest_faller %}
             <div class="ice-border flex items-center p-3 rounded-lg transform hover:scale-105 transition-transform bg-white">
-                <div class="text-2xl mr-2">🧊</div>
+                <div class="text-2xl mr-2">{{ cold_emoji or '🧊' }}</div>
                 <div class="text-center">
                     <div class="font-black text-base text-blue-600">COLDEST TEAM</div>
                     <div class="flex items-center justify-center mt-1">
@@ -793,7 +786,9 @@ function generateImage() {
     formData.append('markdown_text', document.getElementById('markdown_text').value);
     formData.append('custom_title', document.getElementById('custom_title').value);
     formData.append('custom_subtitle', document.getElementById('custom_subtitle').value);
-    
+    formData.append('hot_emoji', document.getElementById('hot_emoji').value);
+    formData.append('cold_emoji', document.getElementById('cold_emoji').value);
+
     // Make request to image endpoint
     fetch('/reddit-rankings/image', {
         method: 'POST',

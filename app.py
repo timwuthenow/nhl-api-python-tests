@@ -969,11 +969,9 @@ def create_app():
                 custom_title = request.form.get("custom_title", "").strip()
                 custom_subtitle = request.form.get("custom_subtitle", "").strip()
 
-                # Get tier names
-                tier1_name = request.form.get("tier1_name", "").strip()
-                tier2_name = request.form.get("tier2_name", "").strip()
-                tier3_name = request.form.get("tier3_name", "").strip()
-                tier4_name = request.form.get("tier4_name", "").strip()
+                # Get custom emojis
+                hot_emoji = request.form.get("hot_emoji", "🔥")
+                cold_emoji = request.form.get("cold_emoji", "🧊")
 
                 # Add fine total to subtitle if not custom
                 if not custom_subtitle:
@@ -988,10 +986,8 @@ def create_app():
                     input_text=markdown_text,
                     custom_title=custom_title,
                     custom_subtitle=custom_subtitle,
-                    tier1_name=tier1_name,
-                    tier2_name=tier2_name,
-                    tier3_name=tier3_name,
-                    tier4_name=tier4_name
+                    hot_emoji=hot_emoji,
+                    cold_emoji=cold_emoji
                 )
                 
             except Exception as e:
@@ -1010,11 +1006,9 @@ def create_app():
                 custom_title = request.form.get("custom_title", "").strip()
                 custom_subtitle = request.form.get("custom_subtitle", "").strip()
 
-                # Get tier names
-                tier1_name = request.form.get("tier1_name", "").strip()
-                tier2_name = request.form.get("tier2_name", "").strip()
-                tier3_name = request.form.get("tier3_name", "").strip()
-                tier4_name = request.form.get("tier4_name", "").strip()
+                # Get custom emojis
+                hot_emoji = request.form.get("hot_emoji", "🔥")
+                cold_emoji = request.form.get("cold_emoji", "🧊")
 
                 if not markdown_text:
                     return jsonify({"error": "Please provide markdown text"}), 400
@@ -1060,7 +1054,9 @@ def create_app():
                     week_end=week_end,
                     custom_title=custom_title,
                     custom_subtitle=custom_subtitle,
-                    input_text=markdown_text
+                    input_text=markdown_text,
+                    hot_emoji=hot_emoji,
+                    cold_emoji=cold_emoji
                 )
                 
                 # Create temporary files

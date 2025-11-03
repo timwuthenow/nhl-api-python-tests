@@ -247,15 +247,18 @@ class RedditPowerRankingsParser:
             
             # Get team abbreviation
             team_abbrev = self.team_abbrev_map.get(team_name, team_name[:3].upper())
-            
-            # Calculate delta based on last week's rankings
+
+            # Extract delta from the markdown (parts[2])
             delta = 0
-            if team_abbrev in self.last_week_rankings:
-                last_rank = self.last_week_rankings[team_abbrev]
-                current_rank = rank
-                delta = last_rank - current_rank  # Positive means moved up, negative means moved down
-                logger.debug(f"Team: {team_name} ({team_abbrev}), Last week: {last_rank}, This week: {current_rank}, Delta: {delta}")
-            
+            if len(parts) > 2:
+                delta_str = parts[2].strip()
+                if delta_str and delta_str != '-':
+                    try:
+                        delta = int(delta_str)
+                    except ValueError:
+                        logger.warning(f"Could not parse delta '{delta_str}' for {team_name}")
+                        delta = 0
+
             # Extract overall record
             overall_record = parts[3].strip() if len(parts) > 3 else ""
             

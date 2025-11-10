@@ -973,6 +973,12 @@ def create_app():
                 hot_emoji = request.form.get("hot_emoji", "🔥")
                 cold_emoji = request.form.get("cold_emoji", "🧊")
 
+                # Get custom tier labels
+                tier1_label = request.form.get("tier1_label", "Elite")
+                tier2_label = request.form.get("tier2_label", "Good")
+                tier3_label = request.form.get("tier3_label", "Struggling")
+                tier4_label = request.form.get("tier4_label", "Bottom")
+
                 # Add fine total to subtitle if not custom
                 if not custom_subtitle:
                     custom_subtitle = f"Current Total Fines Charged by the NHL this season: ${fine_total:,.0f}"
@@ -987,7 +993,11 @@ def create_app():
                     custom_title=custom_title,
                     custom_subtitle=custom_subtitle,
                     hot_emoji=hot_emoji,
-                    cold_emoji=cold_emoji
+                    cold_emoji=cold_emoji,
+                    tier1_label=tier1_label,
+                    tier2_label=tier2_label,
+                    tier3_label=tier3_label,
+                    tier4_label=tier4_label
                 )
                 
             except Exception as e:
@@ -1009,6 +1019,12 @@ def create_app():
                 # Get custom emojis
                 hot_emoji = request.form.get("hot_emoji", "🔥")
                 cold_emoji = request.form.get("cold_emoji", "🧊")
+
+                # Get custom tier labels
+                tier1_label = request.form.get("tier1_label", "Elite")
+                tier2_label = request.form.get("tier2_label", "Good")
+                tier3_label = request.form.get("tier3_label", "Struggling")
+                tier4_label = request.form.get("tier4_label", "Bottom")
 
                 if not markdown_text:
                     return jsonify({"error": "Please provide markdown text"}), 400
@@ -1056,7 +1072,11 @@ def create_app():
                     custom_subtitle=custom_subtitle,
                     input_text=markdown_text,
                     hot_emoji=hot_emoji,
-                    cold_emoji=cold_emoji
+                    cold_emoji=cold_emoji,
+                    tier1_label=tier1_label,
+                    tier2_label=tier2_label,
+                    tier3_label=tier3_label,
+                    tier4_label=tier4_label
                 )
                 
                 # Create temporary files

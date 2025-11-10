@@ -242,9 +242,6 @@ class RedditPowerRankingsParser:
             team_match = re.search(r'\[([^\]]+)\]', team_cell)
             team_name = team_match.group(1) if team_match else team_cell
             
-            # Clean up team name
-            team_name = team_name.replace('Utah Mammoth', 'Utah Hockey Club')
-            
             # Get team abbreviation
             team_abbrev = self.team_abbrev_map.get(team_name, team_name[:3].upper())
 

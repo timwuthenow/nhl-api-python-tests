@@ -6,6 +6,11 @@
     <title>r/Hockey Power Rankings Visualization</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        /* Force emoji font rendering */
+        body, html, * {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Segoe UI Emoji", "Segoe UI Symbol", "Apple Color Emoji", "Noto Color Emoji", Roboto, Helvetica, Arial, sans-serif;
+        }
+
         .rank-up { 
             color: #10b981; 
             text-shadow: 0 0 3px rgba(0,0,0,0.8), 0 0 6px rgba(0,0,0,0.6), 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
@@ -620,28 +625,6 @@
             <!-- Footer Credit (Shared across both layouts) -->
             <div class="text-center mt-3 pt-2 border-t border-gray-300">
                 <p class="text-gray-600 text-xs">Generated from r/hockey community rankings</p>
-            </div>
-
-            <!-- Summary Stats with Custom Tier Labels -->
-            <div class="bg-white rounded-lg shadow-lg p-3 mt-3">
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
-                    <div class="p-2 bg-green-50 rounded">
-                        <div class="text-xl font-bold text-green-600">{{ rankings|selectattr('rank', 'le', 5)|list|length }}</div>
-                        <div class="text-xs text-gray-600">{{ tier1_label or 'Elite' }} (1-5)</div>
-                    </div>
-                    <div class="p-2 bg-yellow-50 rounded">
-                        <div class="text-xl font-bold text-yellow-600">{{ rankings|selectattr('rank', 'gt', 5)|selectattr('rank', 'le', 15)|list|length }}</div>
-                        <div class="text-xs text-gray-600">{{ tier2_label or 'Good' }} (6-15)</div>
-                    </div>
-                    <div class="p-2 bg-red-50 rounded">
-                        <div class="text-xl font-bold text-red-600">{{ rankings|selectattr('rank', 'gt', 15)|selectattr('rank', 'le', 25)|list|length }}</div>
-                        <div class="text-xs text-gray-600">{{ tier3_label or 'Struggling' }} (16-25)</div>
-                    </div>
-                    <div class="p-2 bg-gray-50 rounded">
-                        <div class="text-xl font-bold text-gray-600">{{ rankings|selectattr('rank', 'gt', 25)|list|length }}</div>
-                        <div class="text-xs text-gray-600">{{ tier4_label or 'Bottom' }} (26-32)</div>
-                    </div>
-                </div>
             </div>
         </div>
         {% endif %}

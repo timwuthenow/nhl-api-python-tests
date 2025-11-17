@@ -1098,10 +1098,10 @@ def create_app():
                         
                         # Load the HTML file
                         page.goto(f"file://{temp_html_path}")
-                        
+
                         # Wait for content to load
                         page.wait_for_load_state('networkidle')
-                        time.sleep(2)  # Extra wait for fonts/styling
+                        time.sleep(3)  # Extra wait for fonts/styling and emoji rendering
 
                         # Find the visualization container with data-capture-area attribute
                         visualization = page.locator('[data-capture-area="true"]')

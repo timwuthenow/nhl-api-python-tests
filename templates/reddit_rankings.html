@@ -205,63 +205,6 @@
                     <p class="text-xs text-gray-500 mt-1">Try: 🔥🧊❄️💀⚡🚀💩🤡👑💎🗑️⭐</p>
                 </div>
 
-                <!-- Custom Tier Labels -->
-                <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        Custom Tier Labels (optional):
-                    </label>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <div>
-                            <label for="tier1_label" class="block text-xs text-gray-600 mb-1">Tier 1 (1-5):</label>
-                            <input
-                                type="text"
-                                name="tier1_label"
-                                id="tier1_label"
-                                class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="Elite"
-                                value="{{ tier1_label or 'Elite' }}"
-                                maxlength="20"
-                            >
-                        </div>
-                        <div>
-                            <label for="tier2_label" class="block text-xs text-gray-600 mb-1">Tier 2 (6-15):</label>
-                            <input
-                                type="text"
-                                name="tier2_label"
-                                id="tier2_label"
-                                class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="Good"
-                                value="{{ tier2_label or 'Good' }}"
-                                maxlength="20"
-                            >
-                        </div>
-                        <div>
-                            <label for="tier3_label" class="block text-xs text-gray-600 mb-1">Tier 3 (16-25):</label>
-                            <input
-                                type="text"
-                                name="tier3_label"
-                                id="tier3_label"
-                                class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="Struggling"
-                                value="{{ tier3_label or 'Struggling' }}"
-                                maxlength="20"
-                            >
-                        </div>
-                        <div>
-                            <label for="tier4_label" class="block text-xs text-gray-600 mb-1">Tier 4 (26-32):</label>
-                            <input
-                                type="text"
-                                name="tier4_label"
-                                id="tier4_label"
-                                class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="Bottom"
-                                value="{{ tier4_label or 'Bottom' }}"
-                                maxlength="20"
-                            >
-                        </div>
-                    </div>
-                </div>
-
                 <div class="mb-4">
                     <label for="markdown_text" class="block text-sm font-medium text-gray-700 mb-2">
                         Paste r/hockey power rankings markdown:
@@ -828,10 +771,6 @@ function generateImage() {
     formData.append('custom_subtitle', document.getElementById('custom_subtitle').value);
     formData.append('hot_emoji', document.getElementById('hot_emoji').value);
     formData.append('cold_emoji', document.getElementById('cold_emoji').value);
-    formData.append('tier1_label', document.getElementById('tier1_label').value);
-    formData.append('tier2_label', document.getElementById('tier2_label').value);
-    formData.append('tier3_label', document.getElementById('tier3_label').value);
-    formData.append('tier4_label', document.getElementById('tier4_label').value);
 
     // Make request to image endpoint
     fetch('/reddit-rankings/image', {

@@ -1087,21 +1087,40 @@ def create_app():
                 temp_image_path = temp_html_path.replace('.html', '.png')
                 
                 try:
-                    # Take screenshot using Playwright
+                    # Take screenshot using Playwright with chromium (cross-platform emoji support)
                     with sync_playwright() as p:
-                        browser = p.chromium.launch(headless=True)
+                        browser = p.chromium.launch(
+                            headless=True,
+                            args=['--font-render-hinting=none']
+                        )
                         context = browser.new_context(
                             viewport={'width': 1400, 'height': 1200},
-                            device_scale_factor=2  # High DPI for crisp image
+                            device_scale_factor=2,  # High DPI for crisp image
+                            locale='en-US'
                         )
                         page = context.new_page()
-                        
+
+                        # Add emoji font CSS before loading
+                        page.add_init_script("""
+                            const style = document.createElement('style');
+                            style.textContent = `
+                                @import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
+                                body, * {
+                                    font-family: system-ui, -apple-system, BlinkMacSystemFont,
+                                                'Segoe UI', 'Segoe UI Emoji', 'Noto Color Emoji',
+                                                'Apple Color Emoji', Arial, sans-serif !important;
+                                }
+                            `;
+                            document.head.appendChild(style);
+                        """)
+
                         # Load the HTML file
                         page.goto(f"file://{temp_html_path}")
 
                         # Wait for content to load
                         page.wait_for_load_state('networkidle')
-                        time.sleep(3)  # Extra wait for fonts/styling and emoji rendering
+                        page.wait_for_load_state('domcontentloaded')
+                        time.sleep(4)  # Extra wait for fonts/styling and emoji rendering
 
                         # Find the visualization container with data-capture-area attribute
                         visualization = page.locator('[data-capture-area="true"]')

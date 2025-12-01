@@ -408,32 +408,69 @@ class NHLFineTracker:
         return daily_salary
     
     def update_penalties(self) -> List[NHLPenalty]:
-        """Fetch and parse new penalties"""
-        articles = self.fetch_nhl_news(days_back=90)  # Look back 90 days for season
+        """Load penalties from JSON file (scraped from NHL.com)"""
         new_penalties = []
-        
+
+        # Try to load from JSON file first (from our scraper)
+        try:
+            with open('nhl_penalties_2025.json', 'r') as f:
+                penalties_data = json.load(f)
+
+            for p_data in penalties_data:
+                # Parse date
+                try:
+                    penalty_date = datetime.fromisoformat(p_data['date'])
+                except:
+                    penalty_date = datetime.now()
+
+                penalty = NHLPenalty(
+                    player_name=p_data.get('player_name', 'Unknown'),
+                    amount=float(p_data.get('amount', 0)),
+                    penalty_type=p_data.get('penalty_type', 'fine'),
+                    reason=p_data.get('reason', 'Unknown'),
+                    date=penalty_date,
+                    games_suspended=p_data.get('games'),
+                    daily_salary=p_data.get('amount', 0) / p_data.get('games', 1) if p_data.get('games') else None,
+                    source_url=p_data.get('url', '')
+                )
+
+                # Check if we already have this penalty
+                if not any(p.player_name == penalty.player_name and
+                          p.date.date() == penalty.date.date() for p in self.penalties):
+                    new_penalties.append(penalty)
+                    self.penalties.append(penalty)
+
+            logger.info(f"Loaded {len(new_penalties)} penalties from JSON file")
+            return new_penalties
+
+        except FileNotFoundError:
+            logger.warning("nhl_penalties_2025.json not found, using fallback method")
+            # Fallback to old method
+            pass
+
+        # Fallback: use old hardcoded method
+        articles = self.fetch_nhl_news(days_back=90)
+
         for article in articles:
-            # Fetch detailed penalty info from the URL
             penalty_details = self.fetch_penalty_details(article['url'])
-            
+
             if penalty_details:
                 penalty = NHLPenalty(
                     player_name=penalty_details['player_name'],
                     amount=penalty_details['amount'] or 0,
                     penalty_type='suspension' if penalty_details['games'] else 'fine',
-                    reason='Cross-checking',  # From the Drouin example
+                    reason='Cross-checking',
                     date=article['date'],
                     games_suspended=penalty_details['games'],
                     daily_salary=penalty_details['amount'] / penalty_details['games'] if penalty_details['games'] else None,
                     source_url=article['url']
                 )
-                
-                # Check if we already have this penalty
-                if not any(p.player_name == penalty.player_name and 
+
+                if not any(p.player_name == penalty.player_name and
                           p.date.date() == penalty.date.date() for p in self.penalties):
                     new_penalties.append(penalty)
                     self.penalties.append(penalty)
-        
+
         return new_penalties
     
     def get_season_totals(self) -> Dict:

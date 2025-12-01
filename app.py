@@ -31,8 +31,194 @@ from nhl_fine_tracker import NHLFineTracker
 from playwright.sync_api import sync_playwright
 import tempfile
 import time
+import json
+import re
 
 logger = logging.getLogger(__name__)
+
+
+def scrape_nhl_penalties(start_date_str='2025-10-01', max_pages=10):
+    """
+    Scrape NHL player safety penalties and save to JSON file
+    Returns the number of penalties scraped
+    """
+    try:
+        from datetime import datetime
+
+        min_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+        base_url = "https://www.nhl.com"
+        search_url = f"{base_url}/search/?query=player%20safety&type=type&value=story"
+
+        all_penalties = []
+
+        with sync_playwright() as p:
+            logger.info(f"Scraping NHL penalties since {start_date_str}...")
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+
+            current_page = 1
+
+            while current_page <= max_pages:
+                url = f"{search_url}&page={current_page}" if current_page > 1 else search_url
+                page.goto(url, wait_until='networkidle', timeout=30000)
+                page.wait_for_timeout(2000)
+
+                results = page.query_selector_all('a:has(article)')
+
+                if not results:
+                    break
+
+                found_old = False
+
+                for result in results:
+                    try:
+                        href = result.get_attribute('href')
+                        url = href if href and href.startswith('http') else f"{base_url}{href}" if href else ""
+
+                        article = result.query_selector('article')
+                        text = article.inner_text() if article else result.inner_text()
+
+                        # Quick filter
+                        if not any(k in text.lower() for k in ['fine', 'suspend', 'banned']):
+                            continue
+
+                        # Parse penalty
+                        penalty = parse_penalty_from_search(text, url)
+                        if penalty:
+                            penalty_date = datetime.fromisoformat(penalty['date'])
+                            if penalty_date < min_date:
+                                found_old = True
+                                break
+                            all_penalties.append(penalty)
+                    except:
+                        continue
+
+                if found_old:
+                    break
+
+                current_page += 1
+                if current_page > max_pages:
+                    break
+
+            browser.close()
+
+        # Remove duplicates
+        unique = []
+        seen = set()
+        for p in all_penalties:
+            key = (p['player_name'], p['date'][:10], p['amount'])
+            if key not in seen:
+                seen.add(key)
+                unique.append(p)
+
+        # Save to JSON
+        with open('nhl_penalties_2025.json', 'w') as f:
+            json.dump(unique, f, indent=2)
+
+        logger.info(f"Scraped {len(unique)} penalties and saved to nhl_penalties_2025.json")
+        return len(unique)
+
+    except Exception as e:
+        logger.error(f"Error scraping penalties: {e}")
+        return 0
+
+
+def parse_penalty_from_search(text, url):
+    """Parse penalty from search result"""
+    try:
+        text_lower = text.lower()
+
+        # Extract date
+        date = None
+        months = {'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+                 'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12}
+
+        for month_name, month_num in months.items():
+            pattern = f"{month_name}[a-z]*\\s+(\\d{{1,2}}),?\\s+(\\d{{4}})"
+            match = re.search(pattern, text_lower)
+            if match:
+                try:
+                    day = int(match.group(1))
+                    year = int(match.group(2))
+                    from datetime import datetime
+                    date = datetime(year, month_num, day)
+                    break
+                except:
+                    pass
+
+        if not date:
+            from datetime import datetime
+            date = datetime.now()
+
+        # Extract player from URL
+        url_match = re.search(r'/news/([a-z0-9-]+)', url.lower())
+        if not url_match:
+            return None
+
+        slug = url_match.group(1)
+        parts = slug.split('-')
+
+        skip = {'the', 'of', 'for', 'suspended', 'fined', 'game', 'games', 'by', 'player',
+                'safety', 'hearing', 'actions', 'maximum', 'in', 'banned'}
+
+        name_parts = []
+        for part in parts:
+            if part in skip or len(part) <= 1 or part.isdigit():
+                continue
+            name_parts.append(part.capitalize())
+            if len(name_parts) >= 3:
+                break
+
+        if len(name_parts) < 2:
+            return None
+
+        player_name = ' '.join(name_parts)
+
+        # Type and amount
+        penalty_type = 'fine'
+        games = None
+        amount = 0
+
+        if 'suspend' in text_lower or 'banned' in text_lower:
+            match = re.search(r'(\d+)\s*-?\s*game', text_lower)
+            if match:
+                games = int(match.group(1))
+                penalty_type = 'suspension'
+                amount = games * 20833.33
+
+        if penalty_type == 'fine':
+            match = re.search(r'\$([0-9,]+)', text)
+            if match:
+                amount = float(match.group(1).replace(',', ''))
+            elif 'maximum' in text_lower:
+                amount = 5000.00
+            else:
+                amount = 2500.00
+
+        # Reason
+        reason_map = {'slash': 'Slashing', 'cross-check': 'Cross-Checking', 'board': 'Boarding',
+                     'rough': 'Roughing', 'butt-end': 'Butt-Ending', 'div': 'Diving',
+                     'trip': 'Tripping', 'hook': 'Hooking'}
+
+        reason = 'Unknown'
+        for keyword, full in reason_map.items():
+            if keyword in (url.lower() + ' ' + text_lower):
+                reason = full
+                break
+
+        return {
+            'player_name': player_name,
+            'amount': amount,
+            'penalty_type': penalty_type,
+            'reason': reason,
+            'date': date.isoformat(),
+            'games': games,
+            'url': url,
+            'title': text[:100],
+            'summary': text[:200]
+        }
+    except:
+        return None
 
 
 def initialize_rankings(flask_app):
@@ -404,6 +590,14 @@ def update_rankings():
                 logging.info(
                     f"Successfully created rankings for {len(rankings_data)} teams"
                 )
+
+                # Scrape NHL penalties in background
+                try:
+                    penalty_count = scrape_nhl_penalties(start_date_str='2025-10-01', max_pages=10)
+                    logging.info(f"Scraped {penalty_count} NHL penalties")
+                except Exception as e:
+                    logging.warning(f"Failed to scrape penalties: {e}")
+
                 return df
 
         logging.error("No rankings data generated")
@@ -1233,11 +1427,22 @@ def create_app():
                 fine_tracker = NHLFineTracker()
                 fine_tracker.update_penalties()
                 season_totals = fine_tracker.get_season_totals()
-                
+                leaderboards = fine_tracker.get_leaderboards()
+
+                # Get biggest offender
+                biggest_offender = None
+                biggest_offender_amount = 0
+                if leaderboards['most_fined_players']:
+                    top_player = leaderboards['most_fined_players'][0]
+                    biggest_offender = top_player[0]  # player name
+                    biggest_offender_amount = top_player[1]['amount']  # total amount
+
                 return jsonify({
                     "success": True,
                     "total_penalties": season_totals.get('total_monetary_impact', 0),
                     "total_incidents": season_totals.get('total_incidents', 0),
+                    "biggest_offender": biggest_offender,
+                    "biggest_offender_amount": biggest_offender_amount,
                     "message": f"Updated: ${season_totals.get('total_monetary_impact', 0):,.0f} total from {season_totals.get('total_incidents', 0)} incidents"
                 })
                 

@@ -129,6 +129,12 @@
                 <p class="text-center text-yellow-800 font-semibold">
                     💰 Current Season NHL Fines & Suspensions: <span id="totalFines" class="text-xl">$273,333</span>
                 </p>
+                <p class="text-center text-yellow-700 text-sm mt-2">
+                    📊 Total Incidents: <span id="totalIncidents" class="font-semibold">0</span>
+                </p>
+                <p class="text-center text-yellow-700 text-sm mt-1">
+                    🎯 Parros Tracker - Biggest Offender: <span id="biggestOffender" class="font-semibold">N/A</span> (<span id="offenderAmount">$0</span>)
+                </p>
             </div>
         </div>
 
@@ -619,7 +625,52 @@ document.addEventListener('DOMContentLoaded', function() {
     const rowsLayout = document.getElementById('rowsLayout');
     if (gridLayout) gridLayout.classList.add('hidden');
     if (rowsLayout) rowsLayout.classList.remove('hidden');
+
+    // Load penalty stats on page load
+    loadPenaltyStats();
 });
+
+function loadPenaltyStats() {
+    // Silently load penalty stats without showing loading state
+    fetch('/update-penalties', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Update the display
+            const totalFinesSpan = document.getElementById('totalFines');
+            if (totalFinesSpan) {
+                totalFinesSpan.textContent = `$${data.total_penalties.toLocaleString()}`;
+            }
+
+            // Update total incidents
+            const totalIncidentsSpan = document.getElementById('totalIncidents');
+            if (totalIncidentsSpan && data.total_incidents) {
+                totalIncidentsSpan.textContent = data.total_incidents;
+            }
+
+            // Update biggest offender
+            const biggestOffenderSpan = document.getElementById('biggestOffender');
+            const offenderAmountSpan = document.getElementById('offenderAmount');
+            if (biggestOffenderSpan && data.biggest_offender) {
+                biggestOffenderSpan.textContent = data.biggest_offender;
+                if (offenderAmountSpan) {
+                    offenderAmountSpan.textContent = `$${data.biggest_offender_amount.toLocaleString()}`;
+                }
+            }
+
+            // Update the subtitle field if it exists and is using default text
+            const subtitleField = document.getElementById('custom_subtitle');
+            if (subtitleField && (subtitleField.value === '' || subtitleField.value.includes('Current Total Fines'))) {
+                subtitleField.value = `Current Total Fines Charged by the NHL this season: $${data.total_penalties.toLocaleString()}`;
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error loading penalty stats:', error);
+    });
+}
 
 function showPenaltiesList() {
     const btn = document.getElementById('showPenaltiesBtn');
@@ -729,13 +780,29 @@ function updatePenalties() {
             if (totalFinesSpan) {
                 totalFinesSpan.textContent = `$${data.total_penalties.toLocaleString()}`;
             }
-            
+
+            // Update total incidents
+            const totalIncidentsSpan = document.getElementById('totalIncidents');
+            if (totalIncidentsSpan && data.total_incidents) {
+                totalIncidentsSpan.textContent = data.total_incidents;
+            }
+
+            // Update biggest offender
+            const biggestOffenderSpan = document.getElementById('biggestOffender');
+            const offenderAmountSpan = document.getElementById('offenderAmount');
+            if (biggestOffenderSpan && data.biggest_offender) {
+                biggestOffenderSpan.textContent = data.biggest_offender;
+                if (offenderAmountSpan) {
+                    offenderAmountSpan.textContent = `$${data.biggest_offender_amount.toLocaleString()}`;
+                }
+            }
+
             // Update the subtitle field if it exists and is using default text
             const subtitleField = document.getElementById('custom_subtitle');
             if (subtitleField && (subtitleField.value === '' || subtitleField.value.includes('Current Total Fines'))) {
                 subtitleField.value = `Current Total Fines Charged by the NHL this season: $${data.total_penalties.toLocaleString()}`;
             }
-            
+
             // Show success message
             alert(data.message);
         } else {

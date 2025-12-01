@@ -1427,23 +1427,38 @@ def create_app():
                 fine_tracker = NHLFineTracker()
                 fine_tracker.update_penalties()
                 season_totals = fine_tracker.get_season_totals()
-                leaderboards = fine_tracker.get_leaderboards()
 
-                # Get biggest offender
+                # Separate fines from suspensions
+                season_penalties = fine_tracker.penalties
+                total_fines = sum(p.amount for p in season_penalties if p.penalty_type == 'fine')
+                total_suspensions_count = sum(1 for p in season_penalties if p.penalty_type == 'suspension')
+                total_suspension_games = sum(p.games_suspended or 0 for p in season_penalties if p.penalty_type == 'suspension')
+
+                # Get biggest offender (fines only)
+                player_fines = {}
+                for penalty in season_penalties:
+                    if penalty.penalty_type == 'fine':
+                        if penalty.player_name not in player_fines:
+                            player_fines[penalty.player_name] = {'amount': 0, 'incidents': 0}
+                        player_fines[penalty.player_name]['amount'] += penalty.amount
+                        player_fines[penalty.player_name]['incidents'] += 1
+
                 biggest_offender = None
                 biggest_offender_amount = 0
-                if leaderboards['most_fined_players']:
-                    top_player = leaderboards['most_fined_players'][0]
-                    biggest_offender = top_player[0]  # player name
-                    biggest_offender_amount = top_player[1]['amount']  # total amount
+                if player_fines:
+                    top_player = max(player_fines.items(), key=lambda x: x[1]['amount'])
+                    biggest_offender = top_player[0]
+                    biggest_offender_amount = top_player[1]['amount']
 
                 return jsonify({
                     "success": True,
-                    "total_penalties": season_totals.get('total_monetary_impact', 0),
+                    "total_fines": total_fines,
                     "total_incidents": season_totals.get('total_incidents', 0),
+                    "total_suspensions": total_suspensions_count,
+                    "total_suspension_games": total_suspension_games,
                     "biggest_offender": biggest_offender,
                     "biggest_offender_amount": biggest_offender_amount,
-                    "message": f"Updated: ${season_totals.get('total_monetary_impact', 0):,.0f} total from {season_totals.get('total_incidents', 0)} incidents"
+                    "message": f"Updated: ${total_fines:,.0f} in fines from {season_totals.get('total_incidents', 0)} incidents ({total_suspensions_count} suspensions)"
                 })
                 
             except Exception as e:

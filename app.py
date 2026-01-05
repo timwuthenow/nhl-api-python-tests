@@ -672,6 +672,8 @@ def process_team_rankings(
                 "scoring_first": sum(g["scoring_first"] for g in game_stats),
                 "comeback_wins": sum(g["comeback_wins"] for g in game_stats),
                 "one_goal_games": sum(g["one_goal_games"] for g in game_stats),
+                "blown_leads": sum(g.get("blown_leads", 0) for g in game_stats),
+                "max_lead_blown": max((g.get("max_lead_blown", 0) for g in game_stats), default=0),
                 "last_10_results": [g.get("last_10", 0) for g in game_stats][-10:],
             }
 

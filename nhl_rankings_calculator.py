@@ -41,7 +41,7 @@ class RankingsCalculator:
             )  # Max 10 points for PK
             special_teams_score = pp_score + pk_score
 
-            # Quality wins (max 10 points)
+            # Quality wins (max 10 points) and blown leads penalty
             if stats["games_played"] > 0:
                 road_wins_pct = (
                     stats["road_wins"] / stats["games_played"]
@@ -52,6 +52,17 @@ class RankingsCalculator:
                     else 0
                 )  # Max 5 points
                 quality_score = road_wins_pct + comeback_pct
+
+                # Blown leads penalty: penalize teams that can't hold leads
+                # Calculated as % of losses that were blown leads (max -5 points)
+                total_losses = stats["losses"] + stats["otl"]
+                blown_leads = stats.get("blown_leads", 0)
+                if total_losses > 0 and blown_leads > 0:
+                    blown_lead_pct = (blown_leads / total_losses) * 5
+                    quality_score -= blown_lead_pct
+                    logging.debug(
+                        f"Blown leads penalty: {blown_leads}/{total_losses} = -{blown_lead_pct:.2f}"
+                    )
             else:
                 quality_score = 0
 

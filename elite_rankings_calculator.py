@@ -59,9 +59,10 @@ class UltimateRankingsCalculator:
             'win_quality': 0.03,            # Regulation vs OT/SO wins
             
             # Momentum & Context (15%)
-            'winning_streak': 0.06,         # Hot/cold streaks
-            'clutch_performance': 0.05,     # One-goal games
-            'recent_form': 0.04            # Last 5 games trend
+            'winning_streak': 0.05,         # Hot/cold streaks
+            'clutch_performance': 0.04,     # One-goal games
+            'recent_form': 0.03,            # Last 5 games trend
+            'blown_leads': 0.03             # Penalty for blowing leads
         }
 
     def get_nhl_standings(self):
@@ -209,6 +210,40 @@ class UltimateRankingsCalculator:
         else:
             return "D (Cupcake)"
 
+    def calculate_recent_record_score(self, last_10_games, team_code):
+        """Calculate recent record score from actual game data (0-100 scale)."""
+        if not last_10_games:
+            return 50.0  # Neutral if no games
+
+        total_points = 0
+        games_played = len(last_10_games)
+
+        for game in last_10_games:
+            # Determine team scores
+            if game.get('homeTeam', {}).get('abbrev') == team_code:
+                team_score = game.get('homeTeam', {}).get('score', 0)
+                opp_score = game.get('awayTeam', {}).get('score', 0)
+            else:
+                team_score = game.get('awayTeam', {}).get('score', 0)
+                opp_score = game.get('homeTeam', {}).get('score', 0)
+
+            if team_score > opp_score:
+                total_points += 2  # Win
+            elif team_score < opp_score:
+                # Check for OT/SO loss
+                game_state = game.get('gameState', '')
+                game_outcome = game.get('gameOutcome', {}).get('lastPeriodType', '')
+                if game_state in ['FINAL/OT', 'FINAL/SO'] or game_outcome in ['OT', 'SO']:
+                    total_points += 1  # OT/SO loss
+                # Else regulation loss = 0 points
+
+        # Calculate points percentage (0-100 scale)
+        max_points = games_played * 2
+        points_percentage = (total_points / max_points) * 100 if max_points > 0 else 50.0
+
+        logger.info(f"{team_code} Recent Record: {total_points}/{max_points} pts = {points_percentage:.1f}%")
+        return points_percentage
+
     def calculate_clutch_performance(self, last_10_games, team_code):
         """Calculate clutch performance metrics."""
         if not last_10_games:
@@ -242,6 +277,97 @@ class UltimateRankingsCalculator:
         clutch_percentage = (one_goal_points / max_clutch_points) * 100
         
         return clutch_percentage
+
+    def calculate_blown_leads(self, last_10_games, team_code):
+        """
+        Calculate blown leads penalty by analyzing game scoring timelines.
+        A blown lead is when a team had a lead at any point but lost the game.
+        Returns a score from 0-100 where 100 = no blown leads, 0 = all losses were blown leads.
+        """
+        if not last_10_games:
+            return 50.0
+
+        losses = 0
+        blown_leads = 0
+
+        for game in last_10_games:
+            # Determine team scores
+            if game.get('homeTeam', {}).get('abbrev') == team_code:
+                team_score = game.get('homeTeam', {}).get('score', 0)
+                opp_score = game.get('awayTeam', {}).get('score', 0)
+            else:
+                team_score = game.get('awayTeam', {}).get('score', 0)
+                opp_score = game.get('homeTeam', {}).get('score', 0)
+
+            # Only analyze losses
+            if team_score >= opp_score:
+                continue
+
+            losses += 1
+
+            # Fetch boxscore to analyze scoring timeline
+            game_id = game.get('id')
+            if not game_id:
+                continue
+
+            try:
+                # Small delay to avoid rate limiting
+                import time
+                time.sleep(0.2)
+
+                # Use landing endpoint which has scoring summary (boxscore doesn't)
+                landing_url = f"https://api-web.nhle.com/v1/gamecenter/{game_id}/landing"
+                response = requests.get(landing_url, timeout=10)
+                if response.status_code != 200:
+                    logger.warning(f"{team_code} game {game_id}: HTTP {response.status_code}")
+                    continue
+                landing_data = response.json()
+
+                # Analyze scoring timeline
+                scoring_summary = landing_data.get('summary', {}).get('scoring', [])
+                team_goals = 0
+                opp_goals = 0
+                max_lead = 0
+
+                if not scoring_summary:
+                    logger.warning(f"{team_code} game {game_id}: No scoring summary data")
+                    continue
+
+                for period in scoring_summary:
+                    goals = period.get('goals', [])
+                    for goal in goals:
+                        goal_team = goal.get('teamAbbrev', {}).get('default', '')
+                        if goal_team == team_code:
+                            team_goals += 1
+                        else:
+                            opp_goals += 1
+
+                        current_lead = team_goals - opp_goals
+                        if current_lead > max_lead:
+                            max_lead = current_lead
+
+                logger.info(f"{team_code} game {game_id}: Final {team_goals}-{opp_goals}, max_lead={max_lead}")
+
+                # If team had a lead at any point but lost, it's a blown lead
+                if max_lead > 0:
+                    blown_leads += 1
+                    logger.info(f"{team_code} BLOWN LEAD: Had {max_lead}-goal lead but lost game {game_id}")
+
+            except Exception as e:
+                logger.warning(f"Could not analyze scoring for game {game_id}: {e}")
+                continue
+
+        # Calculate score: 100 = no blown leads, penalize based on blown lead percentage
+        if losses == 0:
+            return 50.0  # Neutral if no losses
+
+        blown_lead_pct = blown_leads / losses
+        # Score: 100 if no blown leads, decreasing as blown lead % increases
+        # 0 blown leads = 100, all losses blown leads = 0
+        score = 100 - (blown_lead_pct * 100)
+
+        logger.info(f"{team_code} Blown Leads: {blown_leads}/{losses} losses = score {score:.1f}")
+        return score
 
     def calculate_recent_form_trend(self, last_10_games, team_code):
         """Calculate recent form trend (recent half vs earlier half)."""
@@ -544,8 +670,8 @@ class UltimateRankingsCalculator:
                 logger.warning(f"No standings data found for {team_code}")
                 return basic_team_data.get("score", 0)
 
-            # 1. Recent Record (25% weight)
-            recent_record_score = basic_team_data.get("score", 0)
+            # 1. Recent Record (15% weight) - Calculate from actual game data
+            recent_record_score = self.calculate_recent_record_score(last_10_games, team_code)
 
             # 2. Strength of Schedule (15% weight)
             sos_data = self.calculate_strength_of_schedule(team_code, last_10_games, team_strength)
@@ -591,9 +717,12 @@ class UltimateRankingsCalculator:
             # 13. Clutch Performance (5% weight)
             clutch_score = self.calculate_clutch_performance(last_10_games, team_code)
 
-            # 14. Recent Form Trend (4% weight)
+            # 14. Recent Form Trend (3% weight)
             form_trend = self.calculate_recent_form_trend(last_10_games, team_code)
             form_score = max(0, min(100, 50 + form_trend))  # Center around 50
+
+            # 15. Blown Leads Penalty (3% weight)
+            blown_leads_score = self.calculate_blown_leads(last_10_games, team_code)
 
             # Calculate weighted final score
             final_score = (
@@ -610,7 +739,8 @@ class UltimateRankingsCalculator:
                 (win_quality_score * self.weights['win_quality']) +
                 (streak_score * self.weights['winning_streak']) +
                 (clutch_score * self.weights['clutch_performance']) +
-                (form_score * self.weights['recent_form'])
+                (form_score * self.weights['recent_form']) +
+                (blown_leads_score * self.weights['blown_leads'])
             )
 
             # Log detailed calculation
@@ -746,8 +876,9 @@ def get_ultimate_rankings(basic_rankings_file=None):
             # Update games_played with actual count from game log (more accurate than standings API)
             team_data["games_played"] = len(last_10_games)
             
-            # Calculate correct last_10_record from actual game log data
+            # Calculate correct last_10_record and points_percentage from actual game log data
             wins = losses = otl = 0
+            total_points = 0
             for game in last_10_games:
                 if game.get('homeTeam', {}).get('abbrev') == team_code:
                     team_score = game.get('homeTeam', {}).get('score', 0)
@@ -755,15 +886,24 @@ def get_ultimate_rankings(basic_rankings_file=None):
                 else:
                     team_score = game.get('awayTeam', {}).get('score', 0)
                     opp_score = game.get('homeTeam', {}).get('score', 0)
-                
+
                 if team_score > opp_score:
                     wins += 1
+                    total_points += 2
                 elif game.get('gameOutcome', {}).get('lastPeriodType') in ['OT', 'SO']:
                     otl += 1
+                    total_points += 1
                 else:
                     losses += 1
-            
+
             team_data["last_10_record"] = f"{wins}-{losses}-{otl}"
+
+            # Update points_percentage with correct value from actual game data
+            games_played = len(last_10_games)
+            if games_played > 0:
+                team_data["points_percentage"] = round((total_points / (games_played * 2)) * 100, 1)
+                team_data["points"] = total_points
+                team_data["score"] = team_data["points_percentage"]  # Update score to match
             
             ultimate_rankings.append(team_data)
 

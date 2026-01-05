@@ -77,6 +77,11 @@ class GameProcessor:
                 "empty_net_goals": 0,
                 "last_10": 0,
                 "road_wins": 0,
+                "scoring_first": 0,
+                "comeback_wins": 0,
+                "one_goal_games": 0,
+                "blown_leads": 0,
+                "max_lead_blown": 0,
             }
 
             # Get power play stats from player stats
@@ -130,7 +135,8 @@ class GameProcessor:
                         game_stats["powerplay_goals"] = pp_goals
 
             # Process game outcome
-            if game_stats["goals_for"] > game_stats["goals_against"]:
+            team_won = game_stats["goals_for"] > game_stats["goals_against"]
+            if team_won:
                 game_stats["wins"] = 1
                 game_stats["total_points"] = 2
                 game_stats["last_10"] = 1
@@ -152,6 +158,57 @@ class GameProcessor:
                     game_stats["last_10"] = 0.5
                 else:
                     game_stats["losses"] = 1
+
+            # Analyze scoring timeline for blown leads and comeback wins
+            team_score = 0
+            opponent_score = 0
+            max_lead = 0  # Maximum lead our team had
+            max_deficit = 0  # Maximum deficit our team faced
+            scored_first = False
+            first_goal_scored = False
+
+            # Process scoring by period to track lead changes
+            scoring_summary = game_details.get("summary", {}).get("scoring", [])
+            for period in scoring_summary:
+                goals = period.get("goals", [])
+                for goal in goals:
+                    # Determine which team scored
+                    goal_team = goal.get("teamAbbrev", {}).get("default", "")
+                    if goal_team == team_code:
+                        team_score += 1
+                        if not first_goal_scored:
+                            scored_first = True
+                            first_goal_scored = True
+                    else:
+                        opponent_score += 1
+                        if not first_goal_scored:
+                            first_goal_scored = True
+
+                    # Track lead/deficit
+                    current_lead = team_score - opponent_score
+                    if current_lead > max_lead:
+                        max_lead = current_lead
+                    if current_lead < -max_deficit:
+                        max_deficit = -current_lead
+
+            # Set scoring first stat
+            if scored_first:
+                game_stats["scoring_first"] = 1
+
+            # Check for one-goal game
+            if abs(game_stats["goals_for"] - game_stats["goals_against"]) == 1:
+                game_stats["one_goal_games"] = 1
+
+            # Blown lead: had a lead but lost the game
+            if max_lead > 0 and not team_won:
+                game_stats["blown_leads"] = 1
+                game_stats["max_lead_blown"] = max_lead
+                logger.info(f"{team_code} BLOWN LEAD: Had {max_lead}-goal lead but lost")
+
+            # Comeback win: was behind but won the game
+            if max_deficit > 0 and team_won:
+                game_stats["comeback_wins"] = 1
+                logger.info(f"{team_code} COMEBACK WIN: Was down {max_deficit} goals but won")
 
             # Process high danger chances and empty net goals
             for play in game_details.get("summary", {}).get("scoring", []):

@@ -324,21 +324,26 @@ class RedditPowerRankingsParser:
                     delta = row['delta']
                     break
             
-            # Check for biggest riser (most positive delta)
+            # Check for biggest riser (most positive delta, tiebreak by better rank)
             if delta > 0:
-                if biggest_riser is None or delta > biggest_riser['delta']:
-                    biggest_riser = {
-                        'team': team,
-                        'delta': delta
-                    }
-            
-            # Check for biggest faller (most negative delta)
+                if biggest_riser is None:
+                    biggest_riser = {'team': team, 'delta': delta}
+                elif delta > biggest_riser['delta']:
+                    biggest_riser = {'team': team, 'delta': delta}
+                elif delta == biggest_riser['delta'] and team['rank'] < biggest_riser['team']['rank']:
+                    # Tiebreaker: team with better rank (closer to 1) is "hottest"
+                    biggest_riser = {'team': team, 'delta': delta}
+
+            # Check for biggest faller (most negative delta, tiebreak by worse rank)
             if delta < 0:
-                if biggest_faller is None or abs(delta) > biggest_faller['delta']:
-                    biggest_faller = {
-                        'team': team,
-                        'delta': abs(delta)
-                    }
+                abs_delta = abs(delta)
+                if biggest_faller is None:
+                    biggest_faller = {'team': team, 'delta': abs_delta}
+                elif abs_delta > biggest_faller['delta']:
+                    biggest_faller = {'team': team, 'delta': abs_delta}
+                elif abs_delta == biggest_faller['delta'] and team['rank'] > biggest_faller['team']['rank']:
+                    # Tiebreaker: team with worse rank (closer to 32) is "coldest"
+                    biggest_faller = {'team': team, 'delta': abs_delta}
         
         return {
             'teams': display_data,

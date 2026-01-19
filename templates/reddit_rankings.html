@@ -528,19 +528,13 @@
                     {% for team in rankings if team.rank <= 16 %}
                     {% set is_biggest_riser = biggest_riser and team.team_abbrev == biggest_riser.team.team_abbrev %}
                     {% set is_biggest_faller = biggest_faller and team.team_abbrev == biggest_faller.team.team_abbrev %}
-                    <div class="group flex items-center p-2 rounded-lg transition-all duration-300 hover:transform hover:scale-[1.01] bg-white border-2 hover:shadow-lg
+                    <div class="group flex items-center p-2 rounded-lg transition-all duration-300 hover:transform hover:scale-[1.01] bg-white border hover:shadow-lg
                          {% if is_biggest_riser %}fire-border
                          {% elif is_biggest_faller %}ice-border
-                         {% elif team.rank <= 6 %}border-green-300 bg-gradient-to-r from-green-50 to-white
-                         {% elif team.rank <= 13 %}border-yellow-300 bg-gradient-to-r from-yellow-50 to-white
-                         {% else %}border-blue-300 bg-gradient-to-r from-blue-50 to-white{% endif %}">
+                         {% else %}border-gray-200{% endif %}">
                     
                             <!-- Rank Badge -->
-                            <div class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs mr-1 shadow-md
-                                        {% if team.rank == 1 %}bg-gradient-to-br from-yellow-400 to-amber-500 text-white border-2 border-yellow-300
-                                        {% elif team.rank == 2 %}bg-gradient-to-br from-gray-300 to-gray-500 text-white border-2 border-gray-300
-                                        {% elif team.rank == 3 %}bg-gradient-to-br from-orange-600 to-orange-700 text-white border-2 border-orange-400
-                                        {% else %}bg-gradient-to-br from-green-500 to-green-700 text-white{% endif %}">
+                            <div class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs mr-1 shadow-md bg-gray-700 text-white">
                                 {{ team.rank }}
                             </div>
                     
@@ -564,7 +558,7 @@
                             <!-- Team Name -->
                             <div class="flex items-center flex-grow min-w-0 mr-2">
                                 <div class="flex items-center px-1 py-0.5 rounded" style="background-color: {{ team.team_color }}15; border-left: 3px solid {{ team.team_color }};">
-                                    <span class="font-bold text-xs" style="color: {% if team.rank >= 7 and team.rank <= 16 %}#000000{% else %}{{ team.team_color }}DD{% endif %};">{{ team.team_name }}</span>
+                                    <span class="font-bold text-xs text-gray-900">{{ team.team_name }}</span>
                                 </div>
                             </div>
                     
@@ -609,18 +603,13 @@
                     {% for team in rankings if team.rank >= 17 %}
                     {% set is_biggest_riser = biggest_riser and team.team_abbrev == biggest_riser.team.team_abbrev %}
                     {% set is_biggest_faller = biggest_faller and team.team_abbrev == biggest_faller.team.team_abbrev %}
-                    <div class="group flex items-center p-2 rounded-lg transition-all duration-300 hover:transform hover:scale-[1.01] bg-white border-2 hover:shadow-lg
+                    <div class="group flex items-center p-2 rounded-lg transition-all duration-300 hover:transform hover:scale-[1.01] bg-white border hover:shadow-lg
                          {% if is_biggest_riser %}fire-border
                          {% elif is_biggest_faller %}ice-border
-                         {% elif team.rank <= 20 %}border-blue-300 bg-gradient-to-r from-blue-50 to-white
-                         {% elif team.rank <= 27 %}border-orange-300 bg-gradient-to-r from-orange-50 to-white
-                         {% else %}border-red-300 bg-gradient-to-r from-red-50 to-white{% endif %}">
+                         {% else %}border-gray-200{% endif %}">
 
                         <!-- Rank Badge -->
-                        <div class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs mr-1 shadow-md
-                                    {% if team.rank <= 20 %}bg-gradient-to-br from-blue-500 to-blue-700 text-white
-                                    {% elif team.rank <= 27 %}bg-gradient-to-br from-orange-500 to-orange-700 text-white
-                                    {% else %}bg-gradient-to-br from-red-500 to-red-700 text-white{% endif %}">
+                        <div class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs mr-1 shadow-md bg-gray-700 text-white">
                             {{ team.rank }}
                         </div>
                             <div class="flex-shrink-0 w-6 h-6 mr-1">
@@ -642,7 +631,7 @@
                             <!-- Team Name -->
                             <div class="flex items-center flex-grow min-w-0 mr-2">
                                 <div class="flex items-center px-1 py-0.5 rounded" style="background-color: {{ team.team_color }}15; border-left: 3px solid {{ team.team_color }};">
-                                    <span class="font-bold text-xs" style="color: {% if team.rank >= 7 and team.rank <= 16 %}#000000{% else %}{{ team.team_color }}DD{% endif %};">{{ team.team_name }}</span>
+                                    <span class="font-bold text-xs text-gray-900">{{ team.team_name }}</span>
                                 </div>
                             </div>
                             <div class="flex items-center space-x-1 text-xs text-gray-700">
@@ -686,7 +675,7 @@
                         {% if biggest_riser.team.logo_url %}
                         <img src="{{ biggest_riser.team.logo_url }}" alt="{{ biggest_riser.team.team_abbrev }}" class="w-6 h-6 mr-2">
                         {% endif %}
-                        <span class="font-black text-lg" style="color: {{ biggest_riser.team.team_color }};">{{ biggest_riser.team.team_name }}</span>
+                        <span class="font-black text-lg text-gray-900">{{ biggest_riser.team.team_name }}</span>
                     </div>
                     <div class="text-sm font-bold text-orange-700 mt-1">+{{ biggest_riser.delta }} spots {{ render_icon('svg_rocket', 'svg-icon') }}</div>
                 </div>
@@ -702,7 +691,7 @@
                         {% if biggest_faller.team.logo_url %}
                         <img src="{{ biggest_faller.team.logo_url }}" alt="{{ biggest_faller.team.team_abbrev }}" class="w-6 h-6 mr-2">
                         {% endif %}
-                        <span class="font-black text-lg" style="color: {{ biggest_faller.team.team_color }};">{{ biggest_faller.team.team_name }}</span>
+                        <span class="font-black text-lg text-gray-900">{{ biggest_faller.team.team_name }}</span>
                     </div>
                     <div class="text-sm font-bold text-blue-700 mt-1">-{{ biggest_faller.delta }} spots {{ render_icon('svg_snowflake', 'svg-icon') }}</div>
                 </div>
